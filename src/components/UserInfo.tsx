@@ -16,7 +16,7 @@ const UserInfo: React.FC = () => {
             <User className="h-4 w-4 text-extfire-text" />
           </div>
           <div>
-            <p className="text-sm text-extfire-text">Usuário Master</p>
+            <p className="text-sm text-extfire-text">Usuário</p>
             <p className="text-xs text-extfire-gray">{currentUser.email}</p>
           </div>
         </div>
