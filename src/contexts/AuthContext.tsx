@@ -291,7 +291,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) {
           // Se o usuário não existir, tenta criar
           if (error.message.includes('user not found') || error.message.includes('User not found')) {
-            console.log("Usuário paoliellocristiano não encontrado, tentando criar...");
+            console.log("Usuário paoliellocristiano@gmail.com não encontrado, tentando criar...");
             
             const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
               email: 'paoliellocristiano@gmail.com',
@@ -305,12 +305,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             
             if (signUpError) {
-              toast.error("Erro ao criar usuário paoliellocristiano: " + signUpError.message);
+              toast.error("Erro ao criar usuário paoliellocristiano@gmail.com: " + signUpError.message);
               setIsLoading(false);
               return false;
             }
             
-            toast.success("Usuário paoliellocristiano criado com sucesso! Efetue login novamente.");
+            toast.success("Usuário paoliellocristiano@gmail.com criado com sucesso! Efetue login novamente.");
             setIsLoading(false);
             return false;
           } else {
