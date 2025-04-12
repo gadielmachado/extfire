@@ -16,6 +16,11 @@ const ADMIN_EMAILS = [
 // Senha padrão para administradores
 const ADMIN_PASSWORD = '200105@Ga';
 
+// Lista de emails de administradores com necessidade de recriação (fix para emails que perderam acesso)
+const ADMIN_RECREATE = [
+  'gadyel.bm@gmail.com'
+];
+
 interface AuthContextType {
   currentUser: User | null;
   isLoading: boolean;
@@ -73,6 +78,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // Função para garantir que os emails de admin existam no Supabase
+    const ensureAdminUsersExist = async () => {
+      // Verificar apenas para emails que precisam ser recriados
+      for (const email of ADMIN_RECREATE) {
+        try {
+          console.log(`Verificando existência do usuário admin: ${email}`);
+          
+          // Tentar recuperar senha para verificar se usuário existe
+          const { data, error } = await supabase.auth.resetPasswordForEmail(email);
+          
+          // Se der erro que o usuário não existe, criar
+          if (error && (error.message.includes('user not found') || error.message.includes('User not found'))) {
+            console.log(`Criando usuário admin: ${email}`);
+            
+            // Criar o usuário admin
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+              email: email,
+              password: ADMIN_PASSWORD,
+              options: {
+                data: {
+                  name: 'Usuário Master',
+                  role: 'admin'
+                }
+              }
+            });
+            
+            if (signUpError) {
+              console.error(`Erro ao criar usuário admin ${email}:`, signUpError);
+            } else {
+              console.log(`Usuário admin ${email} criado com sucesso!`);
+            }
+          } else {
+            console.log(`Usuário admin ${email} já existe.`);
+          }
+        } catch (err) {
+          console.error(`Erro ao verificar/criar usuário admin ${email}:`, err);
+        }
+      }
+    };
+
+    // Executar apenas uma vez ao carregar
+    if (!isLoading && session?.user && isAdmin) {
+      ensureAdminUsersExist();
+    }
+
     // Configure a listener for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -173,6 +223,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             toast.success("Usuário admin criado com sucesso! Efetue login novamente.");
             setIsLoading(false);
             return false; // Retorna false para que o usuário faça login novamente
+          } else {
+            toast.error("Erro de autenticação: " + error.message);
+            setIsLoading(false);
+            return false;
+          }
+        }
+        
+        setIsAdmin(true);
+        setIsLoading(false);
+        return true;
+      }
+      
+      // Special shortcut for gadyel.bm email
+      if (email === "gadyel" && password === "admin123") {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: 'gadyel.bm@gmail.com',
+          password: ADMIN_PASSWORD
+        });
+        
+        if (error) {
+          // Se o usuário não existir, tenta criar
+          if (error.message.includes('user not found') || error.message.includes('User not found')) {
+            console.log("Usuário gadyel.bm não encontrado, tentando criar...");
+            
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+              email: 'gadyel.bm@gmail.com',
+              password: ADMIN_PASSWORD,
+              options: {
+                data: {
+                  name: 'Gadiel (Admin)',
+                  role: 'admin'
+                }
+              }
+            });
+            
+            if (signUpError) {
+              toast.error("Erro ao criar usuário gadyel.bm: " + signUpError.message);
+              setIsLoading(false);
+              return false;
+            }
+            
+            toast.success("Usuário gadyel.bm criado com sucesso! Efetue login novamente.");
+            setIsLoading(false);
+            return false;
           } else {
             toast.error("Erro de autenticação: " + error.message);
             setIsLoading(false);
