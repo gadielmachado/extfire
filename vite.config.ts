@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => ({
           vendor: ['react', 'react-dom', 'react-router-dom'],
         },
         assetFileNames: (assetInfo) => {
-          if (assetInfo.name && /\.(ico|png)$/.test(assetInfo.name)) {
+          if (assetInfo.name && /\.(ico|png|svg)$/.test(assetInfo.name)) {
             return '[name][extname]';
           }
           return 'assets/[name]-[hash][extname]';
