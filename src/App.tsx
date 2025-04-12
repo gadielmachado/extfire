@@ -15,18 +15,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ClientProvider } from "./contexts/ClientContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
 
-// Configuração do cliente de consulta (query client)
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Desativando opções de refetch automático
-      refetchOnWindowFocus: false,
-      refetchOnMount: true,
-      refetchOnReconnect: false,
-      staleTime: 60 * 60 * 1000, // Considerar dados obsoletos após 1 hora
-    },
-  },
-});
+const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

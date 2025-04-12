@@ -70,7 +70,7 @@ const Dashboard: React.FC = () => {
     
     setIsSyncing(true);
     try {
-      await refreshClientsFromSupabase(true);
+      await refreshClientsFromSupabase();
     } catch (error) {
       console.error("Erro ao sincronizar dados:", error);
       toast.error("Erro ao sincronizar dados");

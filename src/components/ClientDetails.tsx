@@ -36,18 +36,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   onUploadDocument,
   isAdmin
 }) => {
-  const { updateClient, blockClient, unblockClient, refreshClientsFromSupabase } = useClientContext();
+  const { updateClient, blockClient, unblockClient } = useClientContext();
   const { getNotificationColor } = useNotificationContext();
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<{id: string, fileUrl: string, name: string} | null>(null);
   const [isBlocked, setIsBlocked] = useState(client.isBlocked);
-  const [localClient, setLocalClient] = useState<Client>(client);
 
   // Atualizar o estado local quando o client prop mudar
   useEffect(() => {
     setIsBlocked(client.isBlocked);
-    setLocalClient(client);
-  }, [client]);
+  }, [client.isBlocked]);
 
   const handleToggleBlock = () => {
     if (isBlocked) {
@@ -76,9 +74,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     }
     
     // Excluir do cliente
-    const updatedDocuments = localClient.documents.filter(doc => doc.id !== id);
+    const updatedDocuments = client.documents.filter(doc => doc.id !== id);
     updateClient({
-      ...localClient,
+      ...client,
       documents: updatedDocuments
     });
     
@@ -133,9 +131,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     <div className="flex-1 p-8 bg-gray-50">
       <div className="flex justify-between items-start mb-8">
         <div>
-          <h1 className="text-2xl font-bold">{localClient.name}</h1>
-          <p className="text-gray-500">CNPJ: {localClient.cnpj}</p>
-          <p className="text-gray-500">Email: {localClient.email || 'Não informado'}</p>
+          <h1 className="text-2xl font-bold">{client.name}</h1>
+          <p className="text-gray-500">CNPJ: {client.cnpj}</p>
+          <p className="text-gray-500">Email: {client.email || 'Não informado'}</p>
         </div>
         
         <div className="flex gap-3">
@@ -180,8 +178,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               </div>
               <div>
                 <h2 className="font-medium text-gray-800">Próxima Manutenção</h2>
-                <p className={`${getNotificationColor(localClient.maintenanceDate)}`}>
-                  {formatMaintenanceDate(localClient.maintenanceDate)}
+                <p className={`${getNotificationColor(client.maintenanceDate)}`}>
+                  {formatMaintenanceDate(client.maintenanceDate)}
                 </p>
               </div>
             </div>
@@ -213,7 +211,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             </tr>
           </thead>
           <tbody>
-            {localClient.documents.map(doc => (
+            {client.documents.map(doc => (
               <tr key={doc.id} className="border-b border-gray-100">
                 <td className="px-6 py-4 flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-gray-400" />
@@ -244,7 +242,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 </td>
               </tr>
             ))}
-            {localClient.documents.length === 0 && (
+            {client.documents.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                   Nenhum documento encontrado
