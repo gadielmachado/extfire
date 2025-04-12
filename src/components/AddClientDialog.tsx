@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const formSchema = z.object({
-  cnpj: z.string().regex(/^\d+$/, 'CNPJ deve conter apenas números'),
+  cnpj: z.string().regex(/^\d*$/, 'CNPJ deve conter apenas números'),
   name: z.string().min(3, 'Nome da empresa deve ter pelo menos 3 caracteres'),
   createLoginCredentials: z.boolean().default(false),
   loginEmail: z.string().email('Email de login inválido').optional(),

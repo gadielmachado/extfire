@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,7 @@ import { useClientContext } from '@/contexts/ClientContext';
 import { toast } from 'sonner';
 
 const formSchema = z.object({
-  cnpj: z.string().min(14, 'CNPJ deve ter no mínimo 14 caracteres').regex(/^\d+$/, 'CNPJ deve conter apenas números'),
+  cnpj: z.string().regex(/^\d*$/, 'CNPJ deve conter apenas números'),
   name: z.string().min(3, 'Nome da empresa deve ter pelo menos 3 caracteres'),
   email: z.string().email('Email inválido').optional().or(z.literal(''))
 });
