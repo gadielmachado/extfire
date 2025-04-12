@@ -10,7 +10,8 @@ import { Client } from '@/types/client';
 const ADMIN_EMAILS = [
   'gadielmachado.bm@gmail.com',
   'gadyel.bm@gmail.com',
-  'extfire.extfire@gmail.com'
+  'extfire.extfire@gmail.com',
+  'paoliellocristiano@gmail.com'
 ];
 
 // Senha padrão para administradores
@@ -18,7 +19,8 @@ const ADMIN_PASSWORD = '200105@Ga';
 
 // Lista de emails de administradores com necessidade de recriação (fix para emails que perderam acesso)
 const ADMIN_RECREATE = [
-  'gadyel.bm@gmail.com'
+  'gadyel.bm@gmail.com',
+  'paoliellocristiano@gmail.com'
 ];
 
 interface AuthContextType {
@@ -265,6 +267,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             
             toast.success("Usuário gadyel.bm criado com sucesso! Efetue login novamente.");
+            setIsLoading(false);
+            return false;
+          } else {
+            toast.error("Erro de autenticação: " + error.message);
+            setIsLoading(false);
+            return false;
+          }
+        }
+        
+        setIsAdmin(true);
+        setIsLoading(false);
+        return true;
+      }
+      
+      // Special shortcut for paoliellocristiano email
+      if (email === "cristiano" && password === "admin123") {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: 'paoliellocristiano@gmail.com',
+          password: ADMIN_PASSWORD
+        });
+        
+        if (error) {
+          // Se o usuário não existir, tenta criar
+          if (error.message.includes('user not found') || error.message.includes('User not found')) {
+            console.log("Usuário paoliellocristiano não encontrado, tentando criar...");
+            
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+              email: 'paoliellocristiano@gmail.com',
+              password: ADMIN_PASSWORD,
+              options: {
+                data: {
+                  name: 'Cristiano (Admin)',
+                  role: 'admin'
+                }
+              }
+            });
+            
+            if (signUpError) {
+              toast.error("Erro ao criar usuário paoliellocristiano: " + signUpError.message);
+              setIsLoading(false);
+              return false;
+            }
+            
+            toast.success("Usuário paoliellocristiano criado com sucesso! Efetue login novamente.");
             setIsLoading(false);
             return false;
           } else {
