@@ -22,10 +22,18 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    emptyOutDir: true,
+    assetsInlineLimit: 0,
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
+        },
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name && /\.(ico|png)$/.test(assetInfo.name)) {
+            return '[name][extname]';
+          }
+          return 'assets/[name]-[hash][extname]';
         }
       }
     }
