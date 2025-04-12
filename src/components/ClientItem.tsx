@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Edit, Trash2, Lock, Unlock } from 'lucide-react';
 import { useClientContext } from '@/contexts/ClientContext';
 import { Client } from '@/types/client';
@@ -26,10 +26,38 @@ const ClientItem: React.FC<ClientItemProps> = ({ client, isActive, onClick }) =>
   const [isBlocked, setIsBlocked] = useState(client.isBlocked);
   const { deleteClient, setCurrentClientToEdit, setEditDialogOpen, blockClient, unblockClient } = useClientContext();
   const { isAdmin } = useAuthContext();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setIsBlocked(client.isBlocked);
   }, [client.isBlocked]);
+
+  // Adiciona ouvinte de clique global quando o menu está aberto
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // Fecha o menu se o clique for fora do menu e do botão de três pontinhos
+      if (
+        showMenu && 
+        menuRef.current && 
+        !menuRef.current.contains(event.target as Node) &&
+        buttonRef.current && 
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setShowMenu(false);
+      }
+    };
+
+    // Adiciona o ouvinte quando o menu está aberto
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    // Remove o ouvinte quando o componente é desmontado ou o menu é fechado
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMenu]);
 
   const handleEditClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,6 +109,7 @@ const ClientItem: React.FC<ClientItemProps> = ({ client, isActive, onClick }) =>
           </div>
           {isAdmin && (
             <button 
+              ref={buttonRef}
               className="text-extfire-gray hover:text-white p-1 rounded-full"
               onClick={handleMenuToggle}
             >
@@ -91,7 +120,10 @@ const ClientItem: React.FC<ClientItemProps> = ({ client, isActive, onClick }) =>
         <div className="text-sm text-extfire-gray">{client.cnpj}</div>
         
         {showMenu && (
-          <div className="absolute right-3 top-10 bg-white text-black shadow-lg rounded-md z-10 py-1 w-40">
+          <div 
+            ref={menuRef}
+            className="absolute right-3 top-10 bg-white text-black shadow-lg rounded-md z-10 py-1 w-40"
+          >
             <button 
               className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100"
               onClick={handleEditClick}
