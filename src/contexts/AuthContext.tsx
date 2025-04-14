@@ -23,6 +23,9 @@ const ADMIN_RECREATE = [
   'paoliellocristiano@gmail.com'
 ];
 
+// Caso especial - Admin que requer tratamento especial para garantir criação/login
+const SPECIAL_ADMIN = 'paoliellocristiano@gmail.com';
+
 interface AuthContextType {
   currentUser: User | null;
   isLoading: boolean;
@@ -82,11 +85,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Função para garantir que os emails de admin existam no Supabase
     const ensureAdminUsersExist = async () => {
-      // Verificar apenas para emails que precisam ser recriados
+      // Verificar emails de admin que precisam ser recriados/garantidos
       for (const email of ADMIN_RECREATE) {
         try {
           console.log(`Verificando existência do usuário admin: ${email}`);
           
+          // Verificar se é o admin especial que precisa de tratamento diferenciado
+          const isSpecialAdmin = email.toLowerCase() === SPECIAL_ADMIN.toLowerCase();
+          
+          if (isSpecialAdmin) {
+            console.log(`Tratamento especial para o admin: ${email}`);
+            
+            // Importar o serviço clientService de forma dinâmica
+            const { signUpOrUpdateUser } = await import('@/lib/clientService');
+            
+            // Usar a função aprimorada que trata especificamente este email
+            const result = await signUpOrUpdateUser(
+              email,
+              ADMIN_PASSWORD,
+              {
+                name: 'Cristiano (Admin)',
+                cnpj: '',
+                clientId: ''
+              }
+            );
+            
+            if (result.success) {
+              console.log(`Admin especial ${email} ${result.operation === 'created' ? 'criado' : 'atualizado'} com sucesso!`);
+            } else {
+              console.error(`Falha ao garantir admin especial ${email}`);
+            }
+            
+            continue; // Pula para o próximo email
+          }
+          
+          // Para outros emails de admin, segue o fluxo normal
           // Tentar recuperar senha para verificar se usuário existe
           const { data, error } = await supabase.auth.resetPasswordForEmail(email);
           
@@ -283,46 +316,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Special shortcut for paoliellocristiano email
       if (email === "cristiano" && password === "admin123") {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'paoliellocristiano@gmail.com',
-          password: ADMIN_PASSWORD
-        });
+        console.log("Tentando login com email especial paoliellocristiano@gmail.com");
         
-        if (error) {
-          // Se o usuário não existir, tenta criar
-          if (error.message.includes('user not found') || error.message.includes('User not found')) {
-            console.log("Usuário paoliellocristiano@gmail.com não encontrado, tentando criar...");
+        try {
+          // Importar o serviço especial para garantir que o usuário exista
+          const { signUpOrUpdateUser } = await import('@/lib/clientService');
+          
+          // Primeiro garantir que o usuário exista com os metadados corretos
+          const setupResult = await signUpOrUpdateUser(
+            'paoliellocristiano@gmail.com',
+            ADMIN_PASSWORD,
+            {
+              name: 'Cristiano (Admin)',
+              cnpj: '',
+              clientId: ''
+            }
+          );
+          
+          if (setupResult.success) {
+            console.log(`Admin especial configurado com sucesso: ${setupResult.operation}`);
             
-            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            // Agora tenta fazer login
+            const { data, error } = await supabase.auth.signInWithPassword({
               email: 'paoliellocristiano@gmail.com',
-              password: ADMIN_PASSWORD,
-              options: {
-                data: {
-                  name: 'Cristiano (Admin)',
-                  role: 'admin'
-                }
-              }
+              password: ADMIN_PASSWORD
             });
             
-            if (signUpError) {
-              toast.error("Erro ao criar usuário paoliellocristiano@gmail.com: " + signUpError.message);
+            if (error) {
+              console.error("Erro ao fazer login com email paoliellocristiano@gmail.com:", error);
+              toast.error("Não foi possível fazer login como admin: " + error.message);
               setIsLoading(false);
               return false;
             }
             
-            toast.success("Usuário paoliellocristiano@gmail.com criado com sucesso! Efetue login novamente.");
+            setIsAdmin(true);
+            toast.success("Login como administrador realizado com sucesso!");
             setIsLoading(false);
-            return false;
+            return true;
           } else {
-            toast.error("Erro de autenticação: " + error.message);
+            console.error("Falha ao configurar admin especial:", setupResult);
+            toast.error("Erro ao configurar conta de administrador");
             setIsLoading(false);
             return false;
           }
+        } catch (specialError) {
+          console.error("Erro ao processar admin especial:", specialError);
+          toast.error("Erro inesperado ao processar login de administrador");
+          setIsLoading(false);
+          return false;
         }
-        
-        setIsAdmin(true);
-        setIsLoading(false);
-        return true;
       }
       
       // For regular users, login with email/password

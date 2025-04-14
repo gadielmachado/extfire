@@ -49,9 +49,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Função para sincronizar clientes com o Supabase
   const syncClientsWithSupabase = async (clientsToSync: Client[]) => {
     try {
-      // Apenas administradores podem sincronizar clientes
-      if (!isAdmin) return;
-
+      console.log(`Iniciando sincronização de ${clientsToSync.length} clientes com o Supabase...`);
+      
       // Usamos o supabase para salvar os clientes na tabela 'clients'
       const { error } = await supabase
         .from('clients')
@@ -73,11 +72,44 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       if (error) {
         console.error("Erro ao sincronizar clientes com o Supabase:", error);
+        return false;
       } else {
         console.log("Clientes sincronizados com sucesso com o Supabase");
+        
+        // Também atualizar contas de autenticação para cada cliente com email
+        const clientsWithEmail = clientsToSync.filter(client => client.email && client.email.trim() !== '');
+        
+        if (clientsWithEmail.length > 0) {
+          console.log(`Atualizando credenciais de autenticação para ${clientsWithEmail.length} clientes...`);
+          
+          // Importar dinamicamente para evitar dependência circular
+          const { signUpOrUpdateUser } = await import('@/lib/clientService');
+          
+          // Processar cada cliente sequencialmente
+          for (const client of clientsWithEmail) {
+            try {
+              await signUpOrUpdateUser(
+                client.email as string, 
+                client.password || '123456', 
+                {
+                  name: client.name,
+                  cnpj: client.cnpj,
+                  clientId: client.id
+                }
+              );
+            } catch (authError) {
+              console.error(`Erro ao atualizar autenticação para cliente ${client.name}:`, authError);
+            }
+          }
+          
+          console.log(`Finalizada atualização de credenciais para ${clientsWithEmail.length} clientes.`);
+        }
+        
+        return true;
       }
     } catch (error) {
       console.error("Erro ao sincronizar clientes:", error);
+      return false;
     }
   };
 
@@ -274,19 +306,84 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isBlocked: false, // Garantir que novos clientes nunca comecem bloqueados
     };
     
+    // Apenas adiciona o cliente à lista local se não for através de webhook
     const updatedClients = [...clients, newClient];
     setClients(updatedClients);
     
     // Atualizar o localStorage
     saveClientsToStorage(updatedClients);
     
-    // Sincronizar com o Supabase se for admin
-    if (isAdmin) {
-      await syncClientsWithSupabase(updatedClients);
+    // Criar/atualizar credenciais de autenticação se o cliente tiver email
+    if (newClient.email && newClient.email.trim() !== '') {
+      try {
+        console.log(`Criando/atualizando credenciais para o cliente ${newClient.name} (${newClient.email})`);
+        
+        // Importar de forma dinâmica para evitar problemas de dependência circular
+        const { signUpOrUpdateUser } = await import('@/lib/clientService');
+        
+        const result = await signUpOrUpdateUser(
+          newClient.email, 
+          newClient.password || '123456', // Usar senha do cliente ou valor padrão
+          {
+            name: newClient.name,
+            cnpj: newClient.cnpj,
+            clientId: newClient.id
+          }
+        );
+        
+        if (result.success) {
+          console.log(`Credenciais para o cliente ${newClient.name} ${result.operation === 'created' ? 'criadas' : 'atualizadas'} com sucesso!`);
+        } else {
+          console.error(`Erro ao ${result.operation === 'created' ? 'criar' : 'atualizar'} credenciais para o cliente ${newClient.name}`);
+        }
+      } catch (authError) {
+        console.error(`Erro ao gerenciar autenticação para o cliente ${newClient.name}:`, authError);
+      }
+    }
+    
+    // Sincronizar com o Supabase mesmo que não seja admin
+    // Isso garante que todos os clientes existam na tabela clients
+    try {
+      await syncClientWithSupabase(newClient);
+    } catch (syncError) {
+      console.error(`Erro ao sincronizar o cliente ${newClient.name} com o Supabase:`, syncError);
     }
     
     toast.success(`Cliente ${client.name} adicionado com sucesso!`);
     setCurrentClient(newClient);
+  };
+
+  // Função para sincronizar um único cliente com o Supabase
+  const syncClientWithSupabase = async (client: Client) => {
+    try {
+      console.log(`Sincronizando cliente ${client.name} (ID: ${client.id}) com o Supabase...`);
+      
+      const { error } = await supabase
+        .from('clients')
+        .upsert({
+          id: client.id,
+          cnpj: client.cnpj,
+          name: client.name,
+          password: client.password,
+          email: client.email,
+          maintenance_date: client.maintenanceDate ? client.maintenanceDate.toISOString() : null,
+          is_blocked: client.isBlocked,
+          documents: client.documents,
+          user_role: client.userRole || 'client',
+          user_email: client.userEmail || client.email
+        }, { onConflict: 'id' });
+
+      if (error) {
+        console.error(`Erro ao sincronizar cliente ${client.name} com o Supabase:`, error);
+        return false;
+      } else {
+        console.log(`Cliente ${client.name} sincronizado com sucesso com o Supabase`);
+        return true;
+      }
+    } catch (error) {
+      console.error(`Erro geral ao sincronizar cliente ${client.name}:`, error);
+      return false;
+    }
   };
 
   const updateClient = async (updatedClient: Client) => {

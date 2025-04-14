@@ -135,7 +135,76 @@ export async function signUpOrUpdateUser(
   }
 ): Promise<{ success: boolean; operation: 'created' | 'updated' | 'failed' }> {
   try {
-    // Tenta criar um novo usuário
+    console.log(`Tentando registrar/atualizar usuário com email: ${email}`);
+    
+    // Lista de emails de administradores
+    const ADMIN_EMAILS = [
+      'gadielmachado.bm@gmail.com',
+      'gadyel.bm@gmail.com',
+      'extfire.extfire@gmail.com',
+      'paoliellocristiano@gmail.com'
+    ];
+    
+    // Verificar se é um email de administrador
+    const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
+    
+    // Tratar caso especial para paoliellocristiano@gmail.com
+    if (email.toLowerCase() === 'paoliellocristiano@gmail.com') {
+      console.log(`Email especial detectado: ${email}. Tratando como administrador.`);
+      
+      // Primeiro verificar se o usuário já existe
+      try {
+        const { data: userData, error: userError } = await supabase.auth.admin.getUserByEmail(email);
+        
+        // Se o usuário já existe, apenas atualizamos os metadados e a senha
+        if (!userError && userData) {
+          console.log(`Usuário admin ${email} já existe. Atualizando metadados e senha...`);
+          
+          // Atualizar metadados para garantir que seja admin
+          const { updateUserMetadata, updateUserPassword } = await import('./supabaseAdmin');
+          
+          await updateUserMetadata(email, {
+            name: clientData.name || 'Cristiano (Admin)',
+            role: 'admin',
+            isAdmin: true
+          });
+          
+          // Atualizar senha se fornecida
+          if (password && password.length >= 6) {
+            await updateUserPassword(email, password);
+          }
+          
+          return { success: true, operation: 'updated' };
+        }
+        
+        // Se o usuário não existe, criamos com permissões de admin
+        console.log(`Criando usuário admin ${email}...`);
+        const { error: signUpError } = await supabase.auth.signUp({
+          email,
+          password: password || '200105@Ga', // Usar senha fornecida ou padrão
+          options: {
+            data: {
+              name: clientData.name || 'Cristiano (Admin)',
+              role: 'admin',
+              isAdmin: true
+            }
+          }
+        });
+        
+        if (signUpError) {
+          console.error(`Erro ao criar usuário admin ${email}:`, signUpError);
+          return { success: false, operation: 'failed' };
+        }
+        
+        console.log(`Usuário admin ${email} criado com sucesso!`);
+        return { success: true, operation: 'created' };
+      } catch (specialError) {
+        console.error(`Erro ao tratar email especial ${email}:`, specialError);
+      }
+    }
+    
+    // Para usuários normais, tenta criar um novo usuário
+    console.log(`Tentando criar usuário: ${email}, Role: ${isAdmin ? 'admin' : 'client'}`);
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -143,29 +212,50 @@ export async function signUpOrUpdateUser(
         data: {
           name: clientData.name,
           cnpj: clientData.cnpj,
-          role: 'client',
-          clientId: clientData.clientId
+          role: isAdmin ? 'admin' : 'client',
+          clientId: isAdmin ? null : clientData.clientId
         }
       }
     });
     
     // Se não houver erro, o usuário foi criado com sucesso
     if (!error) {
+      console.log(`Usuário ${email} criado com sucesso!`);
       return { success: true, operation: 'created' };
     }
     
-    // Se o erro indicar que o usuário já existe, tentamos atualizar a senha
+    // Se o erro indicar que o usuário já existe, tentamos atualizar a senha e os metadados
     if (error.message.includes('User already registered') || 
         error.message.includes('already in use') || 
         error.message.includes('already exists')) {
       
-      // Tenta atualizar a senha do usuário existente
-      const updated = await updateUserPassword(email, password);
+      console.log(`Usuário ${email} já existe. Tentando atualizar senha e metadados...`);
       
-      if (updated) {
+      // Atualizar metadados para garantir que os dados estejam corretos
+      const { updateUserMetadata, updateUserPassword } = await import('./supabaseAdmin');
+      
+      // Atualizar metadados primeiro
+      const metadataUpdated = await updateUserMetadata(email, {
+        name: clientData.name,
+        cnpj: clientData.cnpj,
+        role: isAdmin ? 'admin' : 'client',
+        clientId: isAdmin ? null : clientData.clientId
+      });
+      
+      // Depois atualizar a senha
+      const passwordUpdated = await updateUserPassword(email, password);
+      
+      if (metadataUpdated && passwordUpdated) {
+        console.log(`Dados do usuário ${email} atualizados com sucesso!`);
+        return { success: true, operation: 'updated' };
+      } else if (metadataUpdated) {
+        console.warn(`Metadados do usuário ${email} atualizados, mas houve erro ao atualizar senha.`);
+        return { success: true, operation: 'updated' };
+      } else if (passwordUpdated) {
+        console.warn(`Senha do usuário ${email} atualizada, mas houve erro ao atualizar metadados.`);
         return { success: true, operation: 'updated' };
       } else {
-        console.error("Erro ao atualizar senha do usuário existente");
+        console.error(`Erro ao atualizar usuário ${email}.`);
         return { success: false, operation: 'failed' };
       }
     }
