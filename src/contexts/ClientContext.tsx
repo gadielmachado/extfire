@@ -498,9 +498,9 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.log(`O cliente a ser excluído NÃO possui email associado.`);
       }
       
-      // Verificar se o cliente sendo excluído é o cliente do usuário atual
-      // Administradores nunca serão deslogados ao excluir clientes
-      const isCurrentUserClient = currentUser && !isAdmin && 
+      // Se for um administrador, nunca será deslogado
+      // Apenas usuários não-administradores que estão excluindo seu próprio cliente serão deslogados
+      const isCurrentUserClient = !isAdmin && currentUser && 
          (currentUser.clientId === clientToDelete.id || 
           (currentUser.email && currentUser.email === clientToDelete.email));
       
@@ -550,8 +550,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Atualizar o localStorage
       saveClientsToStorage(updatedClients);
       
-      // Se o usuário excluiu seu próprio cliente e NÃO é admin, deslogá-lo automaticamente
-      if (isCurrentUserClient && !isAdmin) {
+      // Se o usuário excluiu seu próprio cliente e não é admin, deslogá-lo automaticamente
+      if (isCurrentUserClient) {
         console.log("Usuário excluiu seu próprio cliente. Realizando logout automático...");
         toast.info("Sua conta de cliente foi excluída. Você será redirecionado para a tela de login.");
         
