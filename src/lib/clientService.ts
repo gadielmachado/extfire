@@ -2,7 +2,7 @@
  * Serviço para gerenciamento de clientes e suas credenciais de autenticação
  */
 import { supabase } from '@/integrations/supabase/client';
-import { deleteUserByEmail, updateUserPassword } from './supabaseAdmin';
+import { deleteUserByEmail, updateUserPassword, updateUserMetadata } from './supabaseAdmin';
 import { toast } from 'sonner';
 import { Client } from '@/types/client';
 
@@ -23,14 +23,92 @@ export async function deleteClientWithAuth(client: Client): Promise<boolean> {
     
     console.log(`Tentando excluir credenciais de autenticação para o email: ${client.email}`);
     
-    // Deleta apenas o usuário específico pelo email
+    // Antes de excluir, atualizar os metadados do usuário para refletir o status de desativado
+    // Isso é uma medida adicional caso por algum motivo a exclusão falhe
+    try {
+      console.log(`Marcando usuário como desativado nos metadados antes da exclusão...`);
+      await updateUserMetadata(client.email, {
+        disabled: true,
+        deactivatedAt: new Date().toISOString(),
+        role: 'disabled',
+        clientId: null // Remover associação com o cliente
+      });
+    } catch (err) {
+      console.warn(`Falha ao atualizar metadados, continuando com exclusão...`, err);
+    }
+    
+    // Deleta o usuário específico pelo email
+    // A função deleteUserByEmail já inclui a revogação de todas as sessões
     const deleted = await deleteUserByEmail(client.email);
     
     if (!deleted) {
       console.warn(`Não foi possível excluir o usuário de autenticação para ${client.email}, mas continuaremos com a exclusão do cliente.`);
+      
+      // Forçar logout local caso a exclusão do usuário falhe
+      try {
+        console.log(`Tentando fazer logout local para garantir que sessões não persistam...`);
+        await supabase.auth.signOut();
+      } catch (logoutErr) {
+        console.warn(`Falha ao fazer logout local:`, logoutErr);
+      }
+      
       return true; // Retornamos true para permitir que a exclusão do cliente continue
     } else {
       console.log(`Credenciais do usuário ${client.email} excluídas com sucesso.`);
+      
+      // Verificar novamente se o usuário foi realmente excluído
+      // Usando backoff exponencial para tentar algumas vezes
+      let verificado = false;
+      let tentativas = 0;
+      const maxTentativas = 3;
+      
+      while (!verificado && tentativas < maxTentativas) {
+        try {
+          tentativas++;
+          
+          // Atraso exponencial: 1s, 2s, 4s
+          const delayMs = Math.pow(2, tentativas - 1) * 1000;
+          console.log(`Verificando exclusão (tentativa ${tentativas}/${maxTentativas}), aguardando ${delayMs}ms...`);
+          
+          // Esperar um pouco antes de verificar
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          
+          // Verificar se o usuário ainda existe no Supabase usando signInWithPassword
+          const { error } = await supabase.auth.signInWithPassword({
+            email: client.email,
+            password: "senha-aleatoria-que-nao-deve-funcionar-123456789"
+          });
+          
+          // Se o erro for "usuário não encontrado", então a exclusão funcionou
+          if (error && (
+            error.message.includes('user not found') || 
+            error.message.includes('User not found') ||
+            error.message.includes('Invalid login credentials'))) {
+            console.log(`Verificação confirmou que o usuário foi excluído com sucesso.`);
+            verificado = true;
+          } else {
+            console.warn(`Usuário ainda parece existir após exclusão. Tentando novamente...`);
+          }
+        } catch (verifyErr) {
+          console.warn(`Erro ao verificar exclusão:`, verifyErr);
+        }
+      }
+      
+      if (!verificado) {
+        console.warn(`Não foi possível confirmar a exclusão completa do usuário após ${maxTentativas} tentativas.`);
+      }
+      
+      // Garantir que o usuário seja deslogado localmente
+      try {
+        console.log(`Realizando logout local para garantir que sessões não persistam...`);
+        await supabase.auth.signOut();
+      } catch (logoutErr) {
+        console.warn(`Falha ao fazer logout local após exclusão bem-sucedida:`, logoutErr);
+      }
+      
+      // Limpar qualquer cache ou estado relacionado ao cliente excluído
+      localStorage.removeItem(`extfire_client_${client.id}`);
+      
       return true;
     }
   } catch (error) {

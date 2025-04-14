@@ -229,13 +229,9 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (currentClient) {
       // Se o cliente atual foi excluído
       if (!clients.some(c => c.id === currentClient.id)) {
-        // Selecionar outro cliente
-        if (clients.length > 0) {
-          const activeClients = getActiveClients();
-          setCurrentClient(activeClients.length > 0 ? activeClients[0] : clients[0]);
-        } else {
-          setCurrentClient(null);
-        }
+        // Quando um cliente é excluído, sempre definir como null
+        // para garantir que ele desapareça do dashboard
+        setCurrentClient(null);
       } else {
         // Atualizar dados do cliente atual se ele foi modificado
         const updatedCurrentClient = clients.find(c => c.id === currentClient.id);
@@ -405,6 +401,11 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.log(`O cliente a ser excluído NÃO possui email associado.`);
       }
       
+      // Verificar se o cliente sendo excluído é o cliente do usuário atual
+      const isCurrentUserClient = currentUser && !isAdmin && 
+         (currentUser.clientId === clientToDelete.id || 
+          (currentUser.email && currentUser.email === clientToDelete.email));
+      
       // Importar de forma dinâmica para evitar problemas de SSR
       const { deleteClientWithAuth } = await import('@/lib/clientService');
       
@@ -443,10 +444,36 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const updatedClients = clients.filter(c => c.id !== clientId);
       setClients(updatedClients);
       
+      // Definir o cliente atual como null para garantir que desapareça do dashboard
+      if (currentClient && currentClient.id === clientId) {
+        setCurrentClient(null);
+      }
+      
       // Atualizar o localStorage
       saveClientsToStorage(updatedClients);
       
-      toast.success(`Cliente ${clientToDelete.name} excluído com sucesso`);
+      // Se o usuário excluiu seu próprio cliente, deslogá-lo automaticamente
+      if (isCurrentUserClient) {
+        console.log("Usuário excluiu seu próprio cliente. Realizando logout automático...");
+        toast.info("Sua conta de cliente foi excluída. Você será redirecionado para a tela de login.");
+        
+        try {
+          // Adicionar um pequeno delay para permitir que o toast seja exibido
+          setTimeout(async () => {
+            try {
+              await supabase.auth.signOut();
+              window.location.href = '/login'; // Forçar redirecionamento completo
+            } catch (logoutErr) {
+              console.error("Erro ao fazer logout após exclusão de cliente:", logoutErr);
+              window.location.href = '/login'; // Redirecionamento forçado mesmo se o logout falhar
+            }
+          }, 2000);
+        } catch (logoutErr) {
+          console.error("Erro ao agendar logout após exclusão de cliente:", logoutErr);
+        }
+      } else {
+        toast.success(`Cliente ${clientToDelete.name} excluído com sucesso`);
+      }
     } catch (error) {
       console.error('Erro ao excluir cliente:', error);
       toast.error('Erro ao excluir cliente. Tente novamente mais tarde.');

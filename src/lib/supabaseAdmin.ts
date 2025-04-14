@@ -24,6 +24,36 @@ export const supabaseAdmin = createClient<Database>(
 );
 
 /**
+ * Revoga todas as sessões de um usuário pelo ID
+ * @param userId ID do usuário para revogar sessões
+ * @returns Booleano indicando sucesso ou falha
+ */
+export async function revokeAllUserSessions(userId: string): Promise<boolean> {
+  try {
+    if (!userId || userId.trim() === '') {
+      console.error("ID de usuário vazio ou inválido fornecido para revogação de sessões");
+      return false;
+    }
+
+    console.log(`Revogando todas as sessões para o usuário com ID: ${userId}`);
+    
+    // Invocar a API para revogar todas as sessões
+    const { error } = await supabaseAdmin.auth.admin.signOut(userId);
+    
+    if (error) {
+      console.error("Erro ao revogar sessões do usuário:", error);
+      return false;
+    }
+    
+    console.log(`Todas as sessões do usuário ${userId} foram revogadas com sucesso`);
+    return true;
+  } catch (error) {
+    console.error("Erro geral ao revogar sessões do usuário:", error);
+    return false;
+  }
+}
+
+/**
  * Deleta um usuário de autenticação pelo email
  * @param email Email do usuário a ser deletado
  * @returns Booleano indicando sucesso ou falha
@@ -67,6 +97,14 @@ export async function deleteUserByEmail(email: string): Promise<boolean> {
     }
     
     console.log(`Usuário encontrado com ID: ${userToDelete.id}, email: ${userToDelete.email}`);
+    
+    // Primeiro, revogar todas as sessões ativas do usuário
+    console.log(`Revogando todas as sessões ativas do usuário antes da exclusão...`);
+    const revokeResult = await revokeAllUserSessions(userToDelete.id);
+    
+    if (!revokeResult) {
+      console.warn(`Não foi possível revogar todas as sessões, mas continuaremos com a exclusão do usuário.`);
+    }
     
     // 2. Agora podemos excluir o usuário
     const { error: deleteError } = await supabaseAdmin.auth.admin
