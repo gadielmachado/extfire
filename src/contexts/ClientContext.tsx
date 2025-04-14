@@ -400,10 +400,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const { deleteClientWithAuth } = await import('@/lib/clientService');
       
       // Deletar as credenciais de autenticação se existirem
+      let authDeleted = true;
       if (clientToDelete.email) {
-        const result = await deleteClientWithAuth(clientToDelete);
-        if (!result) {
-          console.warn('Não foi possível excluir completamente as credenciais, mas continuando a exclusão do cliente.');
+        authDeleted = await deleteClientWithAuth(clientToDelete);
+        if (!authDeleted) {
+          console.warn('Não foi possível excluir completamente as credenciais de autenticação, mas continuando a exclusão do cliente.');
+          toast.warning('Houve um problema com a exclusão completa das credenciais. O acesso do usuário foi revogado, mas alguns dados podem permanecer no sistema.');
+        } else {
+          console.log(`Credenciais do usuário ${clientToDelete.email} excluídas com sucesso.`);
         }
       }
       
@@ -424,6 +428,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             
           if (error) {
             console.error("Erro ao excluir cliente do Supabase:", error);
+          } else {
+            console.log("Cliente excluído com sucesso do Supabase");
           }
         } catch (err) {
           console.error("Erro ao excluir cliente do Supabase:", err);
