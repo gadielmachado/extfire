@@ -30,31 +30,54 @@ export const supabaseAdmin = createClient<Database>(
  */
 export async function deleteUserByEmail(email: string): Promise<boolean> {
   try {
+    console.log(`Tentando excluir o usuário com email: ${email}`);
+    
+    if (!email || email.trim() === '') {
+      console.error("Email vazio ou inválido fornecido para exclusão");
+      return false;
+    }
+    
+    // Normalizar o email para garantir consistência
+    const normalizedEmail = email.trim().toLowerCase();
+    
     // 1. Primeiro, precisamos encontrar o usuário pelo email
     const { data: users, error: searchError } = await supabaseAdmin.auth.admin
       .listUsers({ 
         page: 1,
         perPage: 1,
-        filters: { email: email }
+        filters: { email: normalizedEmail }
       });
     
-    if (searchError || !users || users.users.length === 0) {
-      console.error("Erro ao procurar usuário ou usuário não encontrado:", searchError);
+    if (searchError) {
+      console.error("Erro ao procurar usuário:", searchError);
       return false;
     }
     
-    const userId = users.users[0].id;
+    if (!users || users.users.length === 0) {
+      console.warn(`Usuário com email ${normalizedEmail} não encontrado no sistema de autenticação.`);
+      return false;
+    }
+    
+    const userToDelete = users.users[0];
+    
+    // Validação adicional para verificar se é realmente o usuário que queremos excluir
+    if (userToDelete.email?.toLowerCase() !== normalizedEmail) {
+      console.error(`Erro de validação: Email encontrado (${userToDelete.email}) não corresponde ao email solicitado para exclusão (${normalizedEmail})`);
+      return false;
+    }
+    
+    console.log(`Usuário encontrado com ID: ${userToDelete.id}, email: ${userToDelete.email}`);
     
     // 2. Agora podemos excluir o usuário
     const { error: deleteError } = await supabaseAdmin.auth.admin
-      .deleteUser(userId);
+      .deleteUser(userToDelete.id);
     
     if (deleteError) {
       console.error("Erro ao excluir usuário:", deleteError);
       return false;
     }
     
-    console.log(`Usuário com email ${email} excluído com sucesso`);
+    console.log(`Usuário com email ${normalizedEmail} excluído com sucesso`);
     return true;
   } catch (error) {
     console.error("Erro geral ao excluir usuário:", error);

@@ -396,31 +396,34 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
       }
       
+      console.log(`Iniciando exclusão do cliente: ${clientToDelete.name} (ID: ${clientToDelete.id})`);
+      
+      // Verificar se tem email associado e registrar para debugging
+      if (clientToDelete.email) {
+        console.log(`O cliente a ser excluído possui email associado: ${clientToDelete.email}`);
+      } else {
+        console.log(`O cliente a ser excluído NÃO possui email associado.`);
+      }
+      
       // Importar de forma dinâmica para evitar problemas de SSR
       const { deleteClientWithAuth } = await import('@/lib/clientService');
       
       // Deletar as credenciais de autenticação se existirem
-      let authDeleted = true;
       if (clientToDelete.email) {
-        authDeleted = await deleteClientWithAuth(clientToDelete);
-        if (!authDeleted) {
-          console.warn('Não foi possível excluir completamente as credenciais de autenticação, mas continuando a exclusão do cliente.');
-          toast.warning('Houve um problema com a exclusão completa das credenciais. O acesso do usuário foi revogado, mas alguns dados podem permanecer no sistema.');
+        console.log(`Solicitando exclusão das credenciais para o email: ${clientToDelete.email}`);
+        const result = await deleteClientWithAuth(clientToDelete);
+        
+        if (!result) {
+          console.warn('Não foi possível excluir completamente as credenciais, mas continuando a exclusão do cliente.');
         } else {
-          console.log(`Credenciais do usuário ${clientToDelete.email} excluídas com sucesso.`);
+          console.log(`Credenciais do cliente ${clientToDelete.name} excluídas com sucesso.`);
         }
       }
-      
-      // Remover o cliente da lista
-      const updatedClients = clients.filter(c => c.id !== clientId);
-      setClients(updatedClients);
-      
-      // Atualizar o localStorage
-      saveClientsToStorage(updatedClients);
       
       // Também remover do Supabase se for admin
       if (isAdmin) {
         try {
+          console.log(`Removendo cliente ${clientToDelete.id} da tabela clients no Supabase...`);
           const { error } = await supabase
             .from('clients')
             .delete()
@@ -429,12 +432,19 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           if (error) {
             console.error("Erro ao excluir cliente do Supabase:", error);
           } else {
-            console.log("Cliente excluído com sucesso do Supabase");
+            console.log(`Cliente ${clientToDelete.id} removido com sucesso da tabela clients.`);
           }
         } catch (err) {
           console.error("Erro ao excluir cliente do Supabase:", err);
         }
       }
+      
+      // Remover o cliente da lista local
+      const updatedClients = clients.filter(c => c.id !== clientId);
+      setClients(updatedClients);
+      
+      // Atualizar o localStorage
+      saveClientsToStorage(updatedClients);
       
       toast.success(`Cliente ${clientToDelete.name} excluído com sucesso`);
     } catch (error) {
