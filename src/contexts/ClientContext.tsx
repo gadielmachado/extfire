@@ -498,8 +498,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.log(`O cliente a ser excluído NÃO possui email associado.`);
       }
       
-      // Se for um administrador, nunca será deslogado
-      // Apenas usuários não-administradores que estão excluindo seu próprio cliente serão deslogados
+      // Verificar se o cliente sendo excluído é o cliente do usuário atual
+      // (somente para fins de log, não afeta a lógica de logout)
       const isCurrentUserClient = !isAdmin && currentUser && 
          (currentUser.clientId === clientToDelete.id || 
           (currentUser.email && currentUser.email === clientToDelete.email));
@@ -507,8 +507,15 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Importar de forma dinâmica para evitar problemas de SSR
       const { deleteClientWithAuth } = await import('@/lib/clientService');
       
-      // Deletar as credenciais de autenticação se existirem
-      if (clientToDelete.email) {
+      // Verificar se o cliente a ser excluído tem o mesmo email que o administrador atual
+      // Se for o caso, NÃO deletamos as credenciais de autenticação
+      const isAdminOwnEmail = isAdmin && currentUser?.email && 
+                              clientToDelete.email === currentUser.email;
+      
+      if (isAdminOwnEmail) {
+        console.log(`O cliente a ser excluído tem o mesmo email do administrador atual. Ignorando exclusão de credenciais para preservar login.`);
+      } else if (clientToDelete.email) {
+        // Só excluir credenciais se não for o próprio email do admin
         console.log(`Solicitando exclusão das credenciais para o email: ${clientToDelete.email}`);
         const result = await deleteClientWithAuth(clientToDelete);
         
