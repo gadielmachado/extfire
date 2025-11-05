@@ -133,12 +133,45 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // Sempre processar os dados, mesmo que a lista esteja vazia
       // Carregar documentos de todos os clientes
-      const { data: documentsData, error: documentsError } = await supabase
-        .from('documents')
-        .select('*');
+      // IMPORTANTE: Se houver clientes, carregar documentos apenas dos clientes existentes
+      // para evitar problemas de RLS
+      const clientIds = clientsData?.map(c => c.id) || [];
+      
+      let documentsData = null;
+      let documentsError = null;
+      
+      if (clientIds.length > 0) {
+        // Carregar documentos apenas dos clientes que existem
+        const { data, error } = await supabase
+          .from('documents')
+          .select('*')
+          .in('client_id', clientIds);
+        
+        documentsData = data;
+        documentsError = error;
+      } else {
+        // Se não houver clientes, tentar carregar todos (para debug)
+        const { data, error } = await supabase
+          .from('documents')
+          .select('*');
+        
+        documentsData = data;
+        documentsError = error;
+      }
 
       if (documentsError) {
         console.error("Erro ao carregar documentos do Supabase:", documentsError);
+        console.error("Detalhes do erro de documentos:", {
+          code: documentsError.code,
+          message: documentsError.message,
+          details: documentsError.details,
+          hint: documentsError.hint
+        });
+      } else {
+        console.log(`📄 Documentos carregados: ${documentsData?.length || 0}`);
+        if (documentsData && documentsData.length > 0) {
+          console.log("📄 IDs dos clientes com documentos:", [...new Set(documentsData.map(d => d.client_id))]);
+        }
       }
 
       // Criar um mapa de documentos por client_id
@@ -180,6 +213,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       console.log(`✅ ${processedClients.length} cliente(s) carregado(s) do Supabase`);
       console.log(`✅ ${documentsData?.length || 0} documento(s) carregado(s)`);
+      
+      // Log detalhado: mostrar quantos documentos cada cliente tem
+      processedClients.forEach(client => {
+        const docCount = client.documents.length;
+        if (docCount > 0) {
+          console.log(`  📄 Cliente "${client.name}" (${client.id}): ${docCount} documento(s)`);
+        }
+      });
       
       // Se havia dados no localStorage que não estão no Supabase, foram sobrescritos
       // Isso é intencional - Supabase é a fonte de verdade
@@ -716,14 +757,41 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
       }
 
-      console.log("Documento salvo no Supabase:", insertedDoc);
+      console.log("✅ Documento salvo no Supabase:", insertedDoc);
 
-      // Atualizar estado local
+      // CRÍTICO: Recarregar os documentos do Supabase para garantir consistência
+      // Isso garante que os documentos sejam sempre sincronizados com o banco
+      console.log("🔄 Recarregando documentos do Supabase para garantir sincronização...");
+      
+      // Recarregar documentos do cliente específico
+      const { data: reloadedDocuments, error: reloadError } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('client_id', clientId);
+      
+      if (reloadError) {
+        console.error("Erro ao recarregar documentos:", reloadError);
+        // Continuar mesmo com erro para não perder o documento já salvo
+      } else {
+        console.log(`✅ ${reloadedDocuments?.length || 0} documento(s) recarregado(s) para o cliente ${clientId}`);
+      }
+
+      // Atualizar estado local com os documentos recarregados do Supabase
       const updatedClients = clients.map(client => {
         if (client.id === clientId) {
+          // Usar documentos recarregados do Supabase se disponível, senão adicionar o novo
+          const documentsFromSupabase = reloadedDocuments?.map((doc: any) => ({
+            id: doc.id,
+            name: doc.name,
+            type: doc.type,
+            size: doc.size,
+            fileUrl: doc.file_url,
+            uploadDate: new Date(doc.upload_date)
+          })) || [];
+          
           return {
             ...client,
-            documents: [...client.documents, document]
+            documents: documentsFromSupabase
           };
         }
         return client;
@@ -734,9 +802,18 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       // Atualizar current client se necessário
       if (currentClient && currentClient.id === clientId) {
+        const updatedDocuments = reloadedDocuments?.map((doc: any) => ({
+          id: doc.id,
+          name: doc.name,
+          type: doc.type,
+          size: doc.size,
+          fileUrl: doc.file_url,
+          uploadDate: new Date(doc.upload_date)
+        })) || [];
+        
         setCurrentClient({
           ...currentClient,
-          documents: [...currentClient.documents, document]
+          documents: updatedDocuments
         });
       }
       
