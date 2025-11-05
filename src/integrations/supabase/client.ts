@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 // Verificar se as variáveis de ambiente estão disponíveis ou usar valores fixos
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://uktpudqpzajkucqqsyvb.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrdHB1ZHFwemFqa3VjcXFzeXZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM2OTk5MDQsImV4cCI6MjA1OTI3NTkwNH0.nQTmBMz0iHk_hlni80z35kDaHHeY1RO_FlLNy26Os9c";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://dwhbznsijdsiwccamfvd.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aGJ6bnNpamRzaXdjY2FtZnZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwNzUyMTEsImV4cCI6MjA3NTY1MTIxMX0.WhU7sghKmYJTARkulQmDId8obT_iCcI5xMHKdDdItjg";
 
 // Verificação de segurança para garantir que as URLs e chaves estão presentes
 if (!SUPABASE_URL) {
