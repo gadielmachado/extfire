@@ -11,15 +11,15 @@ interface ClientContextType {
   currentClientToEdit: Client | null;
   editDialogOpen: boolean;
   setCurrentClient: (client: Client | null) => void;
-  addClient: (client: Omit<Client, 'id' | 'documents' | 'isBlocked'>) => void;
-  updateClient: (client: Client) => void;
-  deleteClient: (clientId: string) => void;
-  blockClient: (clientId: string) => void;
-  unblockClient: (clientId: string) => void;
+  addClient: (client: Omit<Client, 'id' | 'documents' | 'isBlocked'>) => Promise<void>;
+  updateClient: (client: Client) => Promise<void>;
+  deleteClient: (clientId: string) => Promise<void>;
+  blockClient: (clientId: string) => Promise<void>;
+  unblockClient: (clientId: string) => Promise<void>;
   setCurrentClientToEdit: (client: Client | null) => void;
   setEditDialogOpen: (open: boolean) => void;
-  addDocument: (clientId: string, document: Document) => void;
-  removeDocument: (clientId: string, documentId: string) => void;
+  addDocument: (clientId: string, document: Document) => Promise<void>;
+  removeDocument: (clientId: string, documentId: string) => Promise<void>;
   getActiveClients: () => Client[];
   hasAccessToClient: (clientId: string) => boolean;
   refreshClientsFromSupabase: () => Promise<boolean>;
@@ -114,67 +114,77 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Função para carregar clientes do Supabase
   const loadClientsFromSupabase = async () => {
     try {
+      console.log("Carregando clientes do Supabase (fonte primária de dados)...");
+      
       // Carregar clientes
       const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
-        .select('*');
+        .select('*')
+        .order('created_at', { ascending: false }); // Ordenar por data de criação
 
       if (clientsError) {
         console.error("Erro ao carregar clientes do Supabase:", clientsError);
+        // Se for erro de autenticação ou permissão, mostrar erro mais específico
+        if (clientsError.code === 'PGRST301' || clientsError.message?.includes('permission')) {
+          console.error("Erro de permissão ao acessar Supabase. Verifique as políticas RLS.");
+        }
         return false;
       }
 
-      if (clientsData && clientsData.length > 0) {
-        // Carregar documentos de todos os clientes
-        const { data: documentsData, error: documentsError } = await supabase
-          .from('documents')
-          .select('*');
+      // Sempre processar os dados, mesmo que a lista esteja vazia
+      // Carregar documentos de todos os clientes
+      const { data: documentsData, error: documentsError } = await supabase
+        .from('documents')
+        .select('*');
 
-        if (documentsError) {
-          console.error("Erro ao carregar documentos do Supabase:", documentsError);
-        }
-
-        // Criar um mapa de documentos por client_id
-        const documentsMap: Record<string, Document[]> = {};
-        if (documentsData) {
-          documentsData.forEach((doc: any) => {
-            if (!documentsMap[doc.client_id]) {
-              documentsMap[doc.client_id] = [];
-            }
-            documentsMap[doc.client_id].push({
-              id: doc.id,
-              name: doc.name,
-              type: doc.type,
-              size: doc.size,
-              fileUrl: doc.file_url,
-              uploadDate: new Date(doc.upload_date)
-            });
-          });
-        }
-
-        // Converter os dados para o formato Client
-        const processedClients = clientsData.map((client: any) => ({
-          id: client.id,
-          cnpj: client.cnpj,
-          name: client.name,
-          password: client.password,
-          email: client.email,
-          maintenanceDate: client.maintenance_date ? new Date(client.maintenance_date) : null,
-          isBlocked: client.is_blocked,
-          documents: documentsMap[client.id] || [],
-          userRole: client.user_role || 'client',
-          userEmail: client.user_email || client.email
-        }));
-
-        setClients(processedClients);
-        saveClientsToStorage(processedClients); // Atualiza o localStorage com os dados do Supabase
-
-        console.log("Clientes carregados do Supabase:", processedClients.length);
-        console.log("Documentos carregados:", documentsData?.length || 0);
-        return true;
+      if (documentsError) {
+        console.error("Erro ao carregar documentos do Supabase:", documentsError);
       }
 
-      return false;
+      // Criar um mapa de documentos por client_id
+      const documentsMap: Record<string, Document[]> = {};
+      if (documentsData) {
+        documentsData.forEach((doc: any) => {
+          if (!documentsMap[doc.client_id]) {
+            documentsMap[doc.client_id] = [];
+          }
+          documentsMap[doc.client_id].push({
+            id: doc.id,
+            name: doc.name,
+            type: doc.type,
+            size: doc.size,
+            fileUrl: doc.file_url,
+            uploadDate: new Date(doc.upload_date)
+          });
+        });
+      }
+
+      // Converter os dados para o formato Client
+      const processedClients = (clientsData || []).map((client: any) => ({
+        id: client.id,
+        cnpj: client.cnpj,
+        name: client.name,
+        password: client.password,
+        email: client.email,
+        maintenanceDate: client.maintenance_date ? new Date(client.maintenance_date) : null,
+        isBlocked: client.is_blocked,
+        documents: documentsMap[client.id] || [],
+        userRole: client.user_role || 'client',
+        userEmail: client.user_email || client.email
+      }));
+
+      // CRÍTICO: Sempre atualizar estado e localStorage com dados do Supabase
+      // Isso garante que localStorage seja sobrescrito com dados atualizados
+      setClients(processedClients);
+      saveClientsToStorage(processedClients); // Atualiza o localStorage com os dados do Supabase
+
+      console.log(`✅ ${processedClients.length} cliente(s) carregado(s) do Supabase`);
+      console.log(`✅ ${documentsData?.length || 0} documento(s) carregado(s)`);
+      
+      // Se havia dados no localStorage que não estão no Supabase, foram sobrescritos
+      // Isso é intencional - Supabase é a fonte de verdade
+      
+      return true;
     } catch (error) {
       console.error("Erro ao carregar clientes do Supabase:", error);
       return false;
@@ -186,14 +196,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (initialized) return;
     
     const loadClients = async () => {
-      console.log("Iniciando carregamento de dados do Supabase...");
+      console.log("🔄 Iniciando carregamento de dados do Supabase (fonte primária)...");
       
       // SEMPRE tentar carregar do Supabase primeiro (fonte primária de verdade)
       const supabaseLoaded = await loadClientsFromSupabase();
       
       // Se não conseguir carregar do Supabase (offline ou erro), usa o localStorage apenas como fallback temporário
       if (!supabaseLoaded) {
-        console.warn("Não foi possível carregar do Supabase. Usando cache local como fallback.");
+        console.warn("⚠️ Não foi possível carregar do Supabase. Verificando cache local...");
         const storedClients = localStorage.getItem('extfireClients');
         
         if (storedClients) {
@@ -208,25 +218,43 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               isBlocked: client.isBlocked || false // Garantir que isBlocked existe
             }));
             
+            console.warn("⚠️ Usando dados do cache local (pode estar desatualizado). Tentando sincronizar...");
             setClients(processedClients);
             
-            // Tentar sincronizar novamente em segundo plano
-            setTimeout(() => {
-              console.log("Tentando sincronizar com Supabase em segundo plano...");
-              loadClientsFromSupabase();
-            }, 5000); // Tentar novamente após 5 segundos
+            // Tentar sincronizar novamente em segundo plano várias vezes
+            let retryCount = 0;
+            const maxRetries = 3;
+            const retryInterval = 3000; // 3 segundos
+            
+            const retrySync = async () => {
+              retryCount++;
+              console.log(`🔄 Tentativa ${retryCount}/${maxRetries} de sincronizar com Supabase...`);
+              const success = await loadClientsFromSupabase();
+              if (success) {
+                console.log("✅ Sincronização bem-sucedida! Dados atualizados.");
+              } else if (retryCount < maxRetries) {
+                setTimeout(retrySync, retryInterval);
+              } else {
+                console.error("❌ Não foi possível sincronizar após várias tentativas.");
+                toast.error("Não foi possível sincronizar com o servidor. Os dados podem estar desatualizados.");
+              }
+            };
+            
+            setTimeout(retrySync, retryInterval);
           } catch (error) {
             console.error("Erro ao parsear clientes do localStorage:", error);
+            // Se não conseguir parsear, limpar localStorage corrompido
+            localStorage.removeItem('extfireClients');
             // Initialize with example clients if parsing fails
             initializeWithExampleClients();
           }
         } else {
-          console.log("Nenhum dado encontrado. Inicializando com clientes de exemplo...");
+          console.log("ℹ️ Nenhum dado encontrado localmente. Inicializando com clientes de exemplo...");
           // Add default example clients if no clients exist
           initializeWithExampleClients();
         }
       } else {
-        console.log("Dados carregados com sucesso do Supabase!");
+        console.log("✅ Dados carregados com sucesso do Supabase!");
       }
       
       setInitialized(true);
@@ -334,12 +362,21 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isBlocked: false, // Garantir que novos clientes nunca comecem bloqueados
     };
     
-    // Apenas adiciona o cliente à lista local se não for através de webhook
-    const updatedClients = [...clients, newClient];
-    setClients(updatedClients);
-    
-    // Atualizar o localStorage
-    saveClientsToStorage(updatedClients);
+    // CRÍTICO: Sincronizar com Supabase PRIMEIRO antes de atualizar estado local
+    // Isso garante que o cliente exista no banco antes de aparecer na interface
+    let syncSuccess = false;
+    try {
+      syncSuccess = await syncClientWithSupabase(newClient);
+      if (!syncSuccess) {
+        console.error("Falha ao sincronizar cliente com Supabase. Não será adicionado localmente.");
+        toast.error(`Erro ao adicionar cliente ${client.name}. Verifique sua conexão e tente novamente.`);
+        return; // Não adiciona se não conseguir sincronizar
+      }
+    } catch (syncError) {
+      console.error(`Erro ao sincronizar o cliente ${newClient.name} com o Supabase:`, syncError);
+      toast.error(`Erro ao adicionar cliente ${client.name}. Verifique sua conexão e tente novamente.`);
+      return; // Não adiciona se houver erro
+    }
     
     // Criar/atualizar credenciais de autenticação se o cliente tiver email
     if (newClient.email && newClient.email.trim() !== '') {
@@ -366,16 +403,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       } catch (authError) {
         console.error(`Erro ao gerenciar autenticação para o cliente ${newClient.name}:`, authError);
+        // Não bloqueia a adição do cliente se só a autenticação falhar
       }
     }
     
-    // Sincronizar com o Supabase mesmo que não seja admin
-    // Isso garante que todos os clientes existam na tabela clients
-    try {
-      await syncClientWithSupabase(newClient);
-    } catch (syncError) {
-      console.error(`Erro ao sincronizar o cliente ${newClient.name} com o Supabase:`, syncError);
-    }
+    // Só atualiza estado local e localStorage DEPOIS de sincronizar com sucesso
+    const updatedClients = [...clients, newClient];
+    setClients(updatedClients);
+    saveClientsToStorage(updatedClients);
     
     toast.success(`Cliente ${client.name} adicionado com sucesso!`);
     setCurrentClient(newClient);
@@ -419,19 +454,27 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
+    // CRÍTICO: Sincronizar com Supabase PRIMEIRO antes de atualizar estado local
+    try {
+      const syncSuccess = await syncClientWithSupabase(updatedClient);
+      if (!syncSuccess) {
+        console.error("Falha ao sincronizar cliente atualizado com Supabase.");
+        toast.error(`Erro ao atualizar cliente ${updatedClient.name}. Verifique sua conexão e tente novamente.`);
+        return; // Não atualiza se não conseguir sincronizar
+      }
+    } catch (syncError) {
+      console.error(`Erro ao sincronizar cliente atualizado com o Supabase:`, syncError);
+      toast.error(`Erro ao atualizar cliente ${updatedClient.name}. Verifique sua conexão e tente novamente.`);
+      return; // Não atualiza se houver erro
+    }
+    
+    // Só atualiza estado local e localStorage DEPOIS de sincronizar com sucesso
     const newClients = clients.map(client => 
       client.id === updatedClient.id ? updatedClient : client
     );
     
     setClients(newClients);
-    
-    // Atualizar o localStorage
     saveClientsToStorage(newClients);
-    
-    // Sincronizar com o Supabase se for admin
-    if (isAdmin) {
-      await syncClientsWithSupabase(newClients);
-    }
     
     // Atualizar current client se necessário
     if (currentClient && currentClient.id === updatedClient.id) {
@@ -447,7 +490,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Função para bloquear um cliente
-  const blockClient = (clientId: string) => {
+  const blockClient = async (clientId: string) => {
     // Apenas admins podem bloquear clientes
     if (!isAdmin) {
       console.error("Tentativa de bloquear cliente sem permissões administrativas");
@@ -455,12 +498,32 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
-    const updatedClients = clients.map(client => {
-      if (client.id === clientId) {
-        return { ...client, isBlocked: true };
+    const clientToBlock = clients.find(client => client.id === clientId);
+    if (!clientToBlock) {
+      toast.error("Cliente não encontrado");
+      return;
+    }
+    
+    const updatedClient = { ...clientToBlock, isBlocked: true };
+    
+    // CRÍTICO: Sincronizar com Supabase PRIMEIRO antes de atualizar estado local
+    try {
+      const syncSuccess = await syncClientWithSupabase(updatedClient);
+      if (!syncSuccess) {
+        console.error("Falha ao sincronizar bloqueio do cliente com Supabase.");
+        toast.error("Erro ao bloquear cliente. Verifique sua conexão e tente novamente.");
+        return;
       }
-      return client;
-    });
+    } catch (syncError) {
+      console.error(`Erro ao sincronizar bloqueio do cliente com o Supabase:`, syncError);
+      toast.error("Erro ao bloquear cliente. Verifique sua conexão e tente novamente.");
+      return;
+    }
+    
+    // Só atualiza estado local e localStorage DEPOIS de sincronizar com sucesso
+    const updatedClients = clients.map(client => 
+      client.id === clientId ? updatedClient : client
+    );
     
     setClients(updatedClients);
     saveClientsToStorage(updatedClients);
@@ -475,7 +538,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Função para desbloquear um cliente
-  const unblockClient = (clientId: string) => {
+  const unblockClient = async (clientId: string) => {
     // Apenas admins podem desbloquear clientes
     if (!isAdmin) {
       console.error("Tentativa de desbloquear cliente sem permissões administrativas");
@@ -483,12 +546,32 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
-    const updatedClients = clients.map(client => {
-      if (client.id === clientId) {
-        return { ...client, isBlocked: false };
+    const clientToUnblock = clients.find(client => client.id === clientId);
+    if (!clientToUnblock) {
+      toast.error("Cliente não encontrado");
+      return;
+    }
+    
+    const updatedClient = { ...clientToUnblock, isBlocked: false };
+    
+    // CRÍTICO: Sincronizar com Supabase PRIMEIRO antes de atualizar estado local
+    try {
+      const syncSuccess = await syncClientWithSupabase(updatedClient);
+      if (!syncSuccess) {
+        console.error("Falha ao sincronizar desbloqueio do cliente com Supabase.");
+        toast.error("Erro ao desbloquear cliente. Verifique sua conexão e tente novamente.");
+        return;
       }
-      return client;
-    });
+    } catch (syncError) {
+      console.error(`Erro ao sincronizar desbloqueio do cliente com o Supabase:`, syncError);
+      toast.error("Erro ao desbloquear cliente. Verifique sua conexão e tente novamente.");
+      return;
+    }
+    
+    // Só atualiza estado local e localStorage DEPOIS de sincronizar com sucesso
+    const updatedClients = clients.map(client => 
+      client.id === clientId ? updatedClient : client
+    );
     
     setClients(updatedClients);
     saveClientsToStorage(updatedClients);
