@@ -12,20 +12,87 @@ A Vercel está usando as **credenciais antigas** do Supabase! As novas credencia
 
 ---
 
-## ✅ Solução: Configurar Variáveis de Ambiente
+## ✅ Solução Rápida (3 Minutos)
 
-### 📋 Credenciais Necessárias
+### 1️⃣ Adicionar Variáveis na Vercel
 
+**👉 Acesse:** https://vercel.com → Seu Projeto → Settings → Environment Variables
+
+Ou manualmente:
+1. https://vercel.com/ → Login
+2. Projeto **extfire** → **Settings** → **Environment Variables**
+
+### 2️⃣ Adicionar Estas 2 Variáveis
+
+#### **Variável 1:**
 ```
-VITE_SUPABASE_URL=https://dwhbznsijdsiwccamfvd.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aGJ6bnNpamRzaXdjY2FtZnZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwNzUyMTEsImV4cCI6MjA3NTY1MTIxMX0.WhU7sghKmYJTARkulQmDId8obT_iCcI5xMHKdDdItjg
+Nome: VITE_SUPABASE_URL
+Valor: https://dwhbznsijdsiwccamfvd.supabase.co
+Environments: ✅ Production ✅ Preview ✅ Development
 ```
+
+#### **Variável 2:**
+```
+Nome: VITE_SUPABASE_ANON_KEY
+Valor: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aGJ6bnNpamRzaXdjY2FtZnZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwNzUyMTEsImV4cCI6MjA3NTY1MTIxMX0.WhU7sghKmYJTARkulQmDId8obT_iCcI5xMHKdDdItjg
+Environments: ✅ Production ✅ Preview ✅ Development
+```
+
+**👉 Clique "Save" em cada uma**
+
+**Para obter as credenciais:**
+- Dashboard Supabase > Settings > API > Project URL
+- Dashboard Supabase > Settings > API > Project API keys > anon key
+
+### 3️⃣ Fazer Redeploy
+
+**Opção A - Via Vercel Dashboard:**
+1. Aba **Deployments**
+2. Último deployment → **••• (três pontos)**
+3. **Redeploy**
+
+**Opção B - Via Git:**
+```bash
+git commit --allow-empty -m "trigger redeploy"
+git push origin master
+```
+
+### 4️⃣ Configurar URLs no Supabase
+
+**👉 Acesse:** https://dwhbznsijdsiwccamfvd.supabase.co/project/dwhbznsijdsiwccamfvd/auth/url-configuration
+
+Ou manualmente:
+1. Dashboard Supabase
+2. **Authentication** → **URL Configuration**
+
+**Site URL:**
+```
+https://extfire.vercel.app
+```
+
+**Redirect URLs:**
+```
+http://localhost:5173/**
+https://extfire.vercel.app/**
+https://*.vercel.app/**
+```
+
+**👉 Clique "Save"**
 
 ---
 
-## 🔧 Passo a Passo na Vercel
+## ✅ Testar
 
-### **Método 1: Via Dashboard Vercel (Recomendado)** 👍
+1. Aguarde o deploy terminar (1-2 minutos)
+2. Acesse: https://extfire.vercel.app
+3. Faça login
+4. **Deve funcionar! 🎉**
+
+---
+
+## 📋 Guia Detalhado
+
+### Método 1: Via Dashboard Vercel (Recomendado) 👍
 
 #### **Passo 1: Acessar o Projeto**
 1. Acesse: https://vercel.com/
@@ -68,7 +135,7 @@ git push origin master
 
 ---
 
-### **Método 2: Via CLI Vercel** 💻
+### Método 2: Via CLI Vercel 💻
 
 Se preferir usar a linha de comando:
 
@@ -200,7 +267,7 @@ https://*.vercel.app/**
 
 **Solução:**
 - Se o usuário não existe, crie-o novamente
-- Verifique se executou o `database_setup_rapido.sql`
+- Verifique se executou o `database_setup_complete.sql`
 
 ### ❌ Erro ao enviar email de recuperação
 
@@ -248,7 +315,7 @@ Se funcionar localmente mas falhar na Vercel:
 - [ ] Variáveis de ambiente adicionadas na Vercel
 - [ ] Redeploy feito após adicionar variáveis
 - [ ] URLs de redirecionamento configuradas no Supabase
-- [ ] Banco de dados restaurado com `database_setup_rapido.sql`
+- [ ] Banco de dados restaurado com `database_setup_complete.sql`
 - [ ] Usuário admin criado no novo banco
 - [ ] Testado login na Vercel
 - [ ] Testado recuperação de senha (opcional)
@@ -295,10 +362,10 @@ Considere também:
 
 ---
 
-**Última Atualização**: 10 de Outubro de 2025  
-**Projeto**: ExtFire
+**Última Atualização**: Outubro de 2025  
+**Projeto**: ExtFire  
+**Versão**: 2.0
 
 ---
 
 **💡 Dica**: Salve este arquivo para referência futura quando precisar fazer deploy de projetos com Supabase!
-

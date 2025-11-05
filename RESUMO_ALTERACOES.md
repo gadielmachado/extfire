@@ -36,31 +36,41 @@ Contém:
 
 **👉 Use este arquivo para uma configuração completa e segura**
 
-### 2. `database_setup_rapido.sql` 🚀
-**Versão compacta para restauração rápida**
+### 2. `storage_policies_completo.sql` ⭐
+**Políticas de acesso ao Storage**
 
 Contém:
-- ✅ Mesmas funcionalidades do arquivo completo
-- ✅ Formato mais compacto e direto
-- ✅ Ideal para quem já conhece Supabase/PostgreSQL
+- ✅ Políticas RLS para o bucket 'documents'
+- ✅ Permissões para admins e clientes
+- ✅ Configuração de acesso seguro
 
-**👉 Use este arquivo se preferir uma versão mais enxuta**
+**👉 Execute após criar o bucket 'documents'**
 
-### 3. `INSTRUCOES_RESTAURACAO_BANCO.md` 📖
-**Guia completo passo a passo em português**
+### 3. `GUIA_INICIO.md` 📖
+**Guia rápido de configuração (5 minutos)**
 
-Inclui:
-- 📝 Passo a passo detalhado para restauração
+Consolidação de todos os guias de início rápido:
+- 📝 Passo a passo detalhado para configuração
 - 🔐 Instruções de segurança
 - 💾 Como configurar o Storage
 - 👤 Como criar o primeiro usuário admin
 - 🐛 Solução de problemas comuns
+
+**👉 Comece aqui para configuração rápida**
+
+### 4. `README_RESTAURACAO.md` 📋
+**Guia completo de restauração**
+
+Inclui:
+- 📝 Instruções detalhadas passo a passo
+- ✅ Checklist completo integrado
 - 📊 Estrutura completa das tabelas
 - 🧪 Como testar a aplicação
+- 🔍 Verificação de instalação
 
-**👉 Leia este arquivo antes de começar**
+**👉 Referência completa para restauração**
 
-### 4. `RESUMO_ALTERACOES.md` 📋
+### 5. `RESUMO_ALTERACOES.md` 📋
 Este arquivo que você está lendo agora! 😊
 
 ---
@@ -78,7 +88,7 @@ Ação: Substituir "SUA_SERVICE_ROLE_KEY_AQUI" pela chave real
 ```
 1. Acesse: https://dwhbznsijdsiwccamfvd.supabase.co
 2. Vá para: SQL Editor
-3. Copie e cole: database_setup_complete.sql (ou database_setup_rapido.sql)
+3. Copie e cole: database_setup_complete.sql
 4. Execute o script
 ```
 
@@ -196,8 +206,9 @@ SELECT email, role FROM user_profiles WHERE role = 'admin';
 ## 📞 Ajuda e Suporte
 
 ### Documentação
-- 📖 Leia: `INSTRUCOES_RESTAURACAO_BANCO.md`
-- 📄 Scripts SQL: `database_setup_complete.sql` ou `database_setup_rapido.sql`
+- 📖 Leia: `GUIA_INICIO.md` (início rápido)
+- 📖 Leia: `README_RESTAURACAO.md` (guia completo)
+- 📄 Scripts SQL: `database_setup_complete.sql`
 
 ### Problemas Comuns
 
@@ -235,7 +246,9 @@ Após a configuração, sua aplicação terá:
 
 Sua aplicação ExtFire está pronta para ser restaurada no novo projeto Supabase!
 
-Se tiver dúvidas, consulte o arquivo `INSTRUCOES_RESTAURACAO_BANCO.md` para instruções detalhadas.
+Se tiver dúvidas, consulte:
+- `GUIA_INICIO.md` para início rápido
+- `README_RESTAURACAO.md` para instruções detalhadas
 
 **Boa sorte! 🚀**
 

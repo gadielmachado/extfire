@@ -441,14 +441,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsAdmin(true);
       }
       
-      // Se o usuário for cliente (não admin), verificar se o clientId está definido nos metadados
-      // Se não estiver, tentamos encontrar o cliente correspondente pelo email
-      if (!isAdminEmail(cleanEmail) && (!data.user.user_metadata.clientId || !data.user.user_metadata.clientId.trim())) {
-        try {
-          // Importar dinamicamente para evitar problemas de referência circular
-          const { updateUserMetadata } = await import('@/lib/supabaseAdmin');
-          
-          // Tentar obter a lista de clientes do localStorage para encontrar o correspondente por email
+      // CORREÇÃO: Sincronizar user_profile após login bem-sucedido
+      // Isso garante que o user_profile exista e esteja atualizado
+      try {
+        console.log(`Sincronizando user_profile para ${cleanEmail}...`);
+        
+        // Determinar role e clientId
+        const userRole = isAdminEmail(cleanEmail) ? 'admin' : 'client';
+        let userClientId = data.user.user_metadata?.clientId || null;
+        let userCnpj = data.user.user_metadata?.cnpj || null;
+        
+        // Se for cliente e não tiver clientId, tentar encontrar pelo email
+        if (!isAdminEmail(cleanEmail) && !userClientId) {
+          // Tentar obter a lista de clientes do localStorage
           const storedClients = localStorage.getItem('extfireClients');
           
           if (storedClients) {
@@ -459,21 +464,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             if (matchingClient) {
               console.log(`Encontrou cliente correspondente ao email ${cleanEmail}, ID: ${matchingClient.id}`);
+              userClientId = matchingClient.id;
+              userCnpj = matchingClient.cnpj;
               
-              // Atualizar os metadados do usuário com o clientId correto
+              // Também atualizar metadados no auth.users para consistência
+              const { updateUserMetadata } = await import('@/lib/supabaseAdmin');
               await updateUserMetadata(cleanEmail, {
                 ...data.user.user_metadata,
-                clientId: matchingClient.id,
-                cnpj: matchingClient.cnpj || data.user.user_metadata.cnpj
+                clientId: userClientId,
+                cnpj: userCnpj
               });
-              
-              console.log(`Metadados do usuário atualizados com clientId ${matchingClient.id}`);
             }
           }
-        } catch (err) {
-          console.error("Erro ao atualizar metadados do usuário com clientId:", err);
-          // Não impedimos o login por causa desse erro
         }
+        
+        // Chamar função SQL de sincronização via RPC
+        const { error: syncError } = await supabase.rpc('sync_user_profile', {
+          user_id: data.user.id,
+          user_email: cleanEmail,
+          user_name: data.user.user_metadata?.name || cleanEmail,
+          user_role: userRole,
+          user_client_id: userClientId,
+          user_cnpj: userCnpj
+        });
+        
+        if (syncError) {
+          console.warn('Erro ao sincronizar user_profile:', syncError);
+          // Não impede o login, apenas registra o aviso
+        } else {
+          console.log(`✅ User_profile sincronizado com sucesso para ${cleanEmail}`);
+        }
+      } catch (syncErr) {
+        console.error("Erro ao sincronizar user_profile:", syncErr);
+        // Não impedimos o login por causa desse erro
       }
       
       setIsLoading(false);

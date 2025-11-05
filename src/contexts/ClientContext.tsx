@@ -47,6 +47,63 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  // Função para recarregar documentos de um cliente específico
+  const reloadClientDocuments = async (clientId: string): Promise<boolean> => {
+    try {
+      console.log(`📄 Recarregando documentos do cliente ${clientId}...`);
+      
+      // Buscar documentos do Supabase
+      const { data: documentsData, error: documentsError } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('client_id', clientId);
+      
+      if (documentsError) {
+        console.error("Erro ao recarregar documentos:", documentsError);
+        return false;
+      }
+      
+      console.log(`✅ ${documentsData?.length || 0} documento(s) recarregado(s)`);
+      
+      // Mapear documentos para o formato correto
+      const documentsFromSupabase = (documentsData || []).map((doc: any) => ({
+        id: doc.id,
+        name: doc.name,
+        type: doc.type,
+        size: doc.size,
+        fileUrl: doc.file_url,
+        uploadDate: new Date(doc.upload_date)
+      }));
+      
+      // Atualizar estado local
+      const updatedClients = clients.map(client => {
+        if (client.id === clientId) {
+          return {
+            ...client,
+            documents: documentsFromSupabase
+          };
+        }
+        return client;
+      });
+      
+      setClients(updatedClients);
+      saveClientsToStorage(updatedClients);
+      
+      // Atualizar currentClient se for o mesmo
+      if (currentClient && currentClient.id === clientId) {
+        setCurrentClient({
+          ...currentClient,
+          documents: documentsFromSupabase
+        });
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Erro ao recarregar documentos:", error);
+      return false;
+    }
+  };
+
   // Função para sincronizar clientes com o Supabase
   const syncClientsWithSupabase = async (clientsToSync: Client[]) => {
     try {
@@ -803,86 +860,17 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       console.log("✅ Documento salvo no Supabase:", insertedDoc);
 
-      // CRÍTICO: Recarregar TODOS os dados do Supabase para garantir consistência
-      // Isso garante que os documentos sejam sempre sincronizados com o banco
-      console.log("🔄 Recarregando dados do Supabase para garantir sincronização...");
+      // CRÍTICO: Forçar recarregamento COMPLETO do Supabase para garantir consistência
+      // Isso resolve o problema de documentos que desaparecem ao atualizar a página
+      console.log("🔄 Forçando recarregamento completo dos dados do Supabase...");
       
-      // Recarregar documentos do cliente específico baseado no tipo de usuário
-      let reloadedDocuments = null;
-      let reloadError = null;
+      // Opção 1: Recarregar apenas os documentos do cliente (mais rápido)
+      const reloadSuccess = await reloadClientDocuments(clientId);
       
-      if (isAdmin) {
-        // Admin pode ver todos os documentos do cliente
-        const { data, error } = await supabase
-          .from('documents')
-          .select('*')
-          .eq('client_id', clientId);
-        
-        reloadedDocuments = data;
-        reloadError = error;
-      } else {
-        // Cliente só pode ver seus próprios documentos
-        const { data, error } = await supabase
-          .from('documents')
-          .select('*')
-          .eq('client_id', clientId);
-        
-        reloadedDocuments = data;
-        reloadError = error;
-      }
-      
-      if (reloadError) {
-        console.error("Erro ao recarregar documentos:", reloadError);
-        console.error("Detalhes:", {
-          code: reloadError.code,
-          message: reloadError.message,
-          details: reloadError.details,
-          hint: reloadError.hint
-        });
-        // Continuar mesmo com erro para não perder o documento já salvo
-      } else {
-        console.log(`✅ ${reloadedDocuments?.length || 0} documento(s) recarregado(s) para o cliente ${clientId}`);
-      }
-
-      // Atualizar estado local com os documentos recarregados do Supabase
-      const updatedClients = clients.map(client => {
-        if (client.id === clientId) {
-          // Usar documentos recarregados do Supabase se disponível, senão adicionar o novo
-          const documentsFromSupabase = reloadedDocuments?.map((doc: any) => ({
-            id: doc.id,
-            name: doc.name,
-            type: doc.type,
-            size: doc.size,
-            fileUrl: doc.file_url,
-            uploadDate: new Date(doc.upload_date)
-          })) || [];
-          
-          return {
-            ...client,
-            documents: documentsFromSupabase
-          };
-        }
-        return client;
-      });
-      
-      setClients(updatedClients);
-      saveClientsToStorage(updatedClients);
-      
-      // Atualizar current client se necessário
-      if (currentClient && currentClient.id === clientId) {
-        const updatedDocuments = reloadedDocuments?.map((doc: any) => ({
-          id: doc.id,
-          name: doc.name,
-          type: doc.type,
-          size: doc.size,
-          fileUrl: doc.file_url,
-          uploadDate: new Date(doc.upload_date)
-        })) || [];
-        
-        setCurrentClient({
-          ...currentClient,
-          documents: updatedDocuments
-        });
+      if (!reloadSuccess) {
+        console.warn("⚠️ Falha ao recarregar documentos, tentando reload completo...");
+        // Opção 2: Recarregar TUDO (fallback)
+        await loadClientsFromSupabase();
       }
       
       toast.success(`Documento '${document.name}' adicionado com sucesso!`);
@@ -934,26 +922,15 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       console.log("Documento deletado do Supabase:", documentId);
 
-      // Atualizar estado local
-      const updatedClients = clients.map(client => {
-        if (client.id === clientId) {
-          return {
-            ...client,
-            documents: client.documents.filter(doc => doc.id !== documentId)
-          };
-        }
-        return client;
-      });
+      // CRÍTICO: Forçar recarregamento do Supabase para garantir consistência
+      // Isso resolve o problema de documentos deletados que reaparecem ao atualizar
+      console.log("🔄 Forçando recarregamento após exclusão...");
       
-      setClients(updatedClients);
-      saveClientsToStorage(updatedClients);
+      const reloadSuccess = await reloadClientDocuments(clientId);
       
-      // Atualizar current client se necessário
-      if (currentClient && currentClient.id === clientId) {
-        setCurrentClient({
-          ...currentClient,
-          documents: currentClient.documents.filter(doc => doc.id !== documentId)
-        });
+      if (!reloadSuccess) {
+        console.warn("⚠️ Falha ao recarregar documentos, tentando reload completo...");
+        await loadClientsFromSupabase();
       }
       
       toast.success("Documento removido com sucesso!");

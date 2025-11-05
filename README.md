@@ -1,73 +1,279 @@
-# Welcome to your Lovable project
+# ExtFire - Sistema de Gestão de Clientes
 
-## Project info
+Sistema completo de gerenciamento de clientes com autenticação, controle de documentos e dashboard administrativo.
 
-**URL**: https://lovable.dev/projects/c7af70a3-ef48-4a4f-969a-7ec7673c1be3
+## 🚀 Início Rápido
 
-## How can I edit this code?
+Para começar rapidamente, siga o guia de 5 minutos:
 
-There are several ways of editing your application.
+👉 **[GUIA_INICIO.md](GUIA_INICIO.md)** - Configure tudo em 5 minutos
 
-**Use Lovable**
+---
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/c7af70a3-ef48-4a4f-969a-7ec7673c1be3) and start prompting.
+## 📚 Documentação
 
-Changes made via Lovable will be committed automatically to this repo.
+### Guias Principais
 
-**Use your preferred IDE**
+- **[GUIA_INICIO.md](GUIA_INICIO.md)** ⭐ - Guia rápido de configuração (5 minutos)
+- **[README_RESTAURACAO.md](README_RESTAURACAO.md)** - Guia completo de restauração do banco de dados
+- **[CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md)** - Configuração de deploy na Vercel
+- **[CORRECAO_STORAGE.md](CORRECAO_STORAGE.md)** - Solução de problemas de storage e upload
+- **[RESUMO_ALTERACOES.md](RESUMO_ALTERACOES.md)** - Histórico de alterações
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Scripts SQL
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- **[database_setup_complete.sql](database_setup_complete.sql)** ⭐ - Script completo de configuração do banco
+- **[storage_policies_completo.sql](storage_policies_completo.sql)** - Políticas de storage
+- **[fix_database_issues.sql](fix_database_issues.sql)** - Correções de problemas
+- **[fix_rls_recursion.sql](fix_rls_recursion.sql)** - Correção de recursão RLS
+- **[verificacao_instalacao.sql](verificacao_instalacao.sql)** - Verificação da instalação
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## 🛠️ Tecnologias
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Este projeto é construído com:
 
-# Step 3: Install the necessary dependencies.
-npm i
+- **Vite** - Build tool e dev server
+- **TypeScript** - Tipagem estática
+- **React** - Biblioteca UI
+- **shadcn-ui** - Componentes UI
+- **Tailwind CSS** - Estilização
+- **Supabase** - Backend (PostgreSQL + Auth + Storage)
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+---
+
+## 📋 Pré-requisitos
+
+Antes de começar, você precisa ter:
+
+- Node.js 18+ e npm instalados
+- Conta no Supabase
+- Conta na Vercel (para deploy)
+
+---
+
+## ⚙️ Instalação
+
+### 1. Clonar o Repositório
+
+```bash
+git clone <SEU_REPOSITORIO>
+cd extfire-master
+```
+
+### 2. Instalar Dependências
+
+```bash
+npm install
+```
+
+### 3. Configurar Variáveis de Ambiente
+
+Crie um arquivo `.env.local` na raiz do projeto:
+
+```env
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-chave-anonima
+```
+
+### 4. Configurar Service Role Key
+
+Edite `src/lib/supabaseAdmin.ts` e adicione sua Service Role Key:
+
+```typescript
+const SERVICE_ROLE_KEY = "sua-service-role-key-aqui";
+```
+
+### 5. Executar Scripts SQL
+
+No Supabase Dashboard:
+1. Acesse SQL Editor
+2. Execute `database_setup_complete.sql`
+3. Crie o bucket `documents` no Storage
+4. Execute `storage_policies_completo.sql`
+
+👉 **Veja [GUIA_INICIO.md](GUIA_INICIO.md) para instruções detalhadas**
+
+### 6. Iniciar Aplicação
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Acesse: http://localhost:5173
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## 🎯 Funcionalidades
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Autenticação
+- ✅ Login/Logout
+- ✅ Registro de usuários
+- ✅ Recuperação de senha
+- ✅ Controle de sessão
 
-## What technologies are used for this project?
+### Gestão de Clientes
+- ✅ Cadastro com CNPJ
+- ✅ Edição de informações
+- ✅ Sistema de bloqueio
+- ✅ Controle de data de manutenção
+- ✅ Pesquisa e filtros
 
-This project is built with:
+### Gestão de Documentos
+- ✅ Upload de arquivos (PDF, Word, imagens)
+- ✅ Visualização segura
+- ✅ Organização por cliente
+- ✅ Deleção controlada
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Segurança
+- ✅ Row Level Security (RLS)
+- ✅ Controle de acesso por roles (Admin/Client)
+- ✅ Storage privado
+- ✅ Políticas granulares de acesso
 
-## How can I deploy this project?
+### Interface
+- ✅ Dashboard administrativo
+- ✅ Visualização de detalhes
+- ✅ Notificações em tempo real
+- ✅ Design moderno e responsivo
 
-Simply open [Lovable](https://lovable.dev/projects/c7af70a3-ef48-4a4f-969a-7ec7673c1be3) and click on Share -> Publish.
+---
 
-## Can I connect a custom domain to my Lovable project?
+## 📁 Estrutura do Projeto
 
-Yes it is!
+```
+extfire-master/
+├── src/
+│   ├── components/          # Componentes React
+│   │   ├── ui/             # Componentes UI (shadcn)
+│   │   └── ...             # Componentes específicos
+│   ├── contexts/           # Context API
+│   ├── hooks/              # Custom hooks
+│   ├── integrations/       # Integrações (Supabase)
+│   ├── lib/                # Utilitários e serviços
+│   ├── pages/              # Páginas da aplicação
+│   └── types/              # Definições TypeScript
+├── public/                 # Arquivos estáticos
+├── database_setup_complete.sql    # Script SQL principal
+├── storage_policies_completo.sql  # Políticas de storage
+└── ...                     # Documentação e configurações
+```
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+---
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+## 🔧 Scripts Disponíveis
+
+```bash
+# Desenvolvimento
+npm run dev
+
+# Build para produção
+npm run build
+
+# Preview do build
+npm run preview
+
+# Linting
+npm run lint
+```
+
+---
+
+## 🗄️ Estrutura do Banco de Dados
+
+### Tabelas Principais
+
+- **`clients`** - Dados dos clientes
+- **`documents`** - Metadados dos documentos
+- **`user_profiles`** - Perfis de usuários vinculados ao auth
+
+### Recursos
+
+- Row Level Security (RLS) habilitado
+- 15+ políticas de segurança
+- Triggers para timestamps automáticos
+- Índices para performance
+- Foreign keys para integridade
+
+👉 **Veja [README_RESTAURACAO.md](README_RESTAURACAO.md) para detalhes completos**
+
+---
+
+## 🚀 Deploy
+
+### Vercel
+
+1. Conecte seu repositório à Vercel
+2. Configure as variáveis de ambiente
+3. Faça deploy
+
+👉 **Veja [CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md) para instruções detalhadas**
+
+---
+
+## 🐛 Solução de Problemas
+
+### Problemas Comuns
+
+- **"Invalid API key"** → Verifique as variáveis de ambiente
+- **"relation does not exist"** → Execute `database_setup_complete.sql`
+- **Erro ao fazer upload** → Verifique bucket e políticas de storage
+- **"permission denied"** → Verifique se o usuário é admin
+
+👉 **Veja [CORRECAO_STORAGE.md](CORRECAO_STORAGE.md) para mais soluções**
+
+---
+
+## 📞 Suporte
+
+### Links Úteis
+
+- **Supabase Dashboard**: https://dwhbznsijdsiwccamfvd.supabase.co
+- **Documentação Supabase**: https://supabase.com/docs
+- **Documentação React**: https://react.dev
+
+### Documentação do Projeto
+
+- [GUIA_INICIO.md](GUIA_INICIO.md) - Comece aqui
+- [README_RESTAURACAO.md](README_RESTAURACAO.md) - Guia completo
+- [CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md) - Deploy
+- [CORRECAO_STORAGE.md](CORRECAO_STORAGE.md) - Problemas técnicos
+
+---
+
+## 📝 Licença
+
+Este projeto é propriedade privada.
+
+---
+
+## 🙏 Contribuições
+
+Para contribuir com o projeto:
+
+1. Faça um fork do repositório
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
+
+---
+
+## 📊 Status do Projeto
+
+- ✅ Autenticação funcionando
+- ✅ Gestão de clientes funcionando
+- ✅ Upload de documentos funcionando
+- ✅ Sistema de permissões funcionando
+- ✅ Deploy na Vercel configurado
+
+---
+
+**Última atualização**: Outubro 2025  
+**Versão**: 2.0  
+**Status**: ✅ Produção
+
+---
+
+**Desenvolvido com ❤️ para gerenciamento eficiente de clientes**

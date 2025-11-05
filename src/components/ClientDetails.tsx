@@ -36,7 +36,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   onUploadDocument,
   isAdmin
 }) => {
-  const { updateClient, blockClient, unblockClient } = useClientContext();
+  const { updateClient, blockClient, unblockClient, removeDocument } = useClientContext();
   const { getNotificationColor } = useNotificationContext();
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<{id: string, fileUrl: string, name: string} | null>(null);
@@ -60,29 +60,20 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const handleDeleteConfirm = async () => {
     if (!documentToDelete) return;
     
-    const { id, fileUrl } = documentToDelete;
+    const { id } = documentToDelete;
     
-    // Excluir do Supabase Storage primeiro
-    if (fileUrl) {
-      const deleted = await deleteFileFromStorage(fileUrl);
-      if (!deleted) {
-        toast.error('Erro ao excluir arquivo do storage');
-        setShowDeleteAlert(false);
-        setDocumentToDelete(null);
-        return;
-      }
+    // CORREÇÃO: Usar removeDocument() do contexto que faz a exclusão completa
+    // (tanto do Storage quanto da tabela documents no Supabase)
+    try {
+      await removeDocument(client.id, id);
+      // removeDocument já mostra o toast de sucesso
+    } catch (error) {
+      console.error('Erro ao excluir documento:', error);
+      toast.error('Erro ao excluir documento');
+    } finally {
+      setShowDeleteAlert(false);
+      setDocumentToDelete(null);
     }
-    
-    // Excluir do cliente
-    const updatedDocuments = client.documents.filter(doc => doc.id !== id);
-    updateClient({
-      ...client,
-      documents: updatedDocuments
-    });
-    
-    toast.success('Documento excluído com sucesso!');
-    setShowDeleteAlert(false);
-    setDocumentToDelete(null);
   };
 
   const openDeleteConfirmation = (doc: Document) => {
