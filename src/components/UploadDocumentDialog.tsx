@@ -71,17 +71,18 @@ const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onC
       }
       
       // Criar documento com URL do arquivo
+      // Usar UUID para o ID (crypto.randomUUID() é suportado em navegadores modernos)
       const newDocument: Document = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         name: file.name,
         type: getFileType(file.name),
-        size: formatFileSize(file.size),
+        size: formatFileSize(file.size), // Formato para exibição
         uploadDate: new Date(),
         fileUrl: fileUrl
       };
       
       // Adicionar o documento ao cliente
-      addDocument(currentClient.id, newDocument);
+      await addDocument(currentClient.id, newDocument);
       
       toast.success('Documento enviado com sucesso!');
       setFile(null);

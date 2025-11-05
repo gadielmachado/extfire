@@ -679,6 +679,10 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     
     try {
+      // Extrair o tamanho real em bytes do arquivo da URL ou do objeto Document
+      // Se o size já está formatado (ex: "1.5 MB"), precisamos do tamanho original
+      // Por enquanto, vamos usar o size como string (o Supabase aceita string)
+      
       // Primeiro, salvar o documento no Supabase
       const { data: insertedDoc, error: insertError } = await supabase
         .from('documents')
@@ -687,7 +691,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           client_id: clientId,
           name: document.name,
           type: document.type,
-          size: document.size,
+          size: document.size, // Já é string, mantém o formato
           file_url: document.fileUrl,
           upload_date: document.uploadDate.toISOString()
         })
@@ -696,7 +700,19 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       if (insertError) {
         console.error("Erro ao salvar documento no Supabase:", insertError);
-        toast.error("Erro ao salvar documento no banco de dados");
+        console.error("Detalhes do erro:", {
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        });
+        
+        // Mostrar erro mais específico ao usuário
+        let errorMessage = "Erro ao salvar documento no banco de dados";
+        if (insertError.message) {
+          errorMessage += `: ${insertError.message}`;
+        }
+        toast.error(errorMessage);
         return;
       }
 
