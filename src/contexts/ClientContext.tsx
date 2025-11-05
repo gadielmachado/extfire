@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Client } from '@/types/client';
 import { Document } from '@/types/document';
 import { toast } from 'sonner';
@@ -36,6 +36,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const { isAdmin, currentUser } = useAuthContext?.() || { isAdmin: false, currentUser: null };
+  const previousUserIdRef = useRef<string | null>(null);
 
   // Função para salvar clientes no localStorage
   const saveClientsToStorage = (clientsToSave: Client[]) => {
@@ -141,22 +142,49 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let documentsError = null;
       
       if (clientIds.length > 0) {
-        // Carregar documentos apenas dos clientes que existem
-        const { data, error } = await supabase
-          .from('documents')
-          .select('*')
-          .in('client_id', clientIds);
-        
-        documentsData = data;
-        documentsError = error;
+        // Se for admin, carregar documentos de todos os clientes
+        // Se for cliente, carregar apenas documentos do seu próprio cliente
+        if (isAdmin) {
+          // Admin pode ver todos os documentos
+          const { data, error } = await supabase
+            .from('documents')
+            .select('*')
+            .in('client_id', clientIds);
+          
+          documentsData = data;
+          documentsError = error;
+        } else if (currentUser?.clientId) {
+          // Cliente só pode ver seus próprios documentos
+          const { data, error } = await supabase
+            .from('documents')
+            .select('*')
+            .eq('client_id', currentUser.clientId);
+          
+          documentsData = data;
+          documentsError = error;
+        } else if (currentUser?.email) {
+          // Tentar encontrar cliente pelo email
+          const clientByEmail = clientsData?.find(c => c.email?.toLowerCase() === currentUser.email.toLowerCase());
+          if (clientByEmail) {
+            const { data, error } = await supabase
+              .from('documents')
+              .select('*')
+              .eq('client_id', clientByEmail.id);
+            
+            documentsData = data;
+            documentsError = error;
+          }
+        }
       } else {
-        // Se não houver clientes, tentar carregar todos (para debug)
-        const { data, error } = await supabase
-          .from('documents')
-          .select('*');
-        
-        documentsData = data;
-        documentsError = error;
+        // Se não houver clientes, tentar carregar todos (para debug - apenas admin)
+        if (isAdmin) {
+          const { data, error } = await supabase
+            .from('documents')
+            .select('*');
+          
+          documentsData = data;
+          documentsError = error;
+        }
       }
 
       if (documentsError) {
@@ -232,7 +260,23 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Load clients from Supabase on component mount - apenas uma vez
+  // Recarregar dados quando o usuário mudar (login/logout)
+  useEffect(() => {
+    // Resetar initialized quando o usuário muda para forçar recarregamento
+    // Usar uma ref para evitar loops infinitos
+    const currentUserId = currentUser?.id || null;
+    
+    if (previousUserIdRef.current !== currentUserId) {
+      console.log("🔄 Usuário mudou, recarregando dados...", {
+        anterior: previousUserIdRef.current,
+        atual: currentUserId
+      });
+      previousUserIdRef.current = currentUserId;
+      setInitialized(false);
+    }
+  }, [currentUser?.id, isAdmin]);
+
+  // Load clients from Supabase on component mount ou quando inicializado for resetado
   useEffect(() => {
     if (initialized) return;
     
@@ -302,7 +346,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     
     loadClients();
-  }, [isAdmin]); // Agora depende de isAdmin para garantir que possa sincronizar corretamente
+  }, [isAdmin, initialized]); // Agora depende de isAdmin e initialized para recarregar quando necessário
 
   const initializeWithExampleClients = () => {
     const exampleClient: Client = {
@@ -759,18 +803,42 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       console.log("✅ Documento salvo no Supabase:", insertedDoc);
 
-      // CRÍTICO: Recarregar os documentos do Supabase para garantir consistência
+      // CRÍTICO: Recarregar TODOS os dados do Supabase para garantir consistência
       // Isso garante que os documentos sejam sempre sincronizados com o banco
-      console.log("🔄 Recarregando documentos do Supabase para garantir sincronização...");
+      console.log("🔄 Recarregando dados do Supabase para garantir sincronização...");
       
-      // Recarregar documentos do cliente específico
-      const { data: reloadedDocuments, error: reloadError } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('client_id', clientId);
+      // Recarregar documentos do cliente específico baseado no tipo de usuário
+      let reloadedDocuments = null;
+      let reloadError = null;
+      
+      if (isAdmin) {
+        // Admin pode ver todos os documentos do cliente
+        const { data, error } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('client_id', clientId);
+        
+        reloadedDocuments = data;
+        reloadError = error;
+      } else {
+        // Cliente só pode ver seus próprios documentos
+        const { data, error } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('client_id', clientId);
+        
+        reloadedDocuments = data;
+        reloadError = error;
+      }
       
       if (reloadError) {
         console.error("Erro ao recarregar documentos:", reloadError);
+        console.error("Detalhes:", {
+          code: reloadError.code,
+          message: reloadError.message,
+          details: reloadError.details,
+          hint: reloadError.hint
+        });
         // Continuar mesmo com erro para não perder o documento já salvo
       } else {
         console.log(`✅ ${reloadedDocuments?.length || 0} documento(s) recarregado(s) para o cliente ${clientId}`);

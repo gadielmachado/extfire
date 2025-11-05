@@ -588,11 +588,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    setIsAdmin(false);
-    localStorage.removeItem('extfireUser');
-    navigate('/login');
+    try {
+      // Fazer logout local apenas (sem scope=global)
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Erro ao fazer logout:", error);
+        // Continuar mesmo com erro para limpar estado local
+      }
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+    } finally {
+      setCurrentUser(null);
+      setIsAdmin(false);
+      localStorage.removeItem('extfireUser');
+      navigate('/login');
+    }
   };
 
   return (
