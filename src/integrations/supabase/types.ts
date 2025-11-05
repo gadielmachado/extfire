@@ -9,7 +9,108 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      clients: {
+        Row: {
+          id: string
+          cnpj: string
+          name: string
+          password: string
+          email: string | null
+          maintenance_date: string | null
+          is_blocked: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          cnpj: string
+          name: string
+          password: string
+          email?: string | null
+          maintenance_date?: string | null
+          is_blocked?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          cnpj?: string
+          name?: string
+          password?: string
+          email?: string | null
+          maintenance_date?: string | null
+          is_blocked?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      documents: {
+        Row: {
+          id: string
+          client_id: string
+          name: string
+          type: string
+          size: string
+          file_url: string
+          upload_date: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          name: string
+          type: string
+          size: string
+          file_url: string
+          upload_date?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          client_id?: string
+          name?: string
+          type?: string
+          size?: string
+          file_url?: string
+          upload_date?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      user_profiles: {
+        Row: {
+          id: string
+          cnpj: string | null
+          name: string
+          email: string
+          role: string
+          client_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          cnpj?: string | null
+          name: string
+          email: string
+          role: string
+          client_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          cnpj?: string | null
+          name?: string
+          email?: string
+          role?: string
+          client_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

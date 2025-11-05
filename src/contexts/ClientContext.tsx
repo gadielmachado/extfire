@@ -52,6 +52,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log(`Iniciando sincronização de ${clientsToSync.length} clientes com o Supabase...`);
       
       // Usamos o supabase para salvar os clientes na tabela 'clients'
+      // Nota: documents, user_role e user_email não existem na tabela clients
       const { error } = await supabase
         .from('clients')
         .upsert(
@@ -62,10 +63,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             password: client.password,
             email: client.email,
             maintenance_date: client.maintenanceDate ? client.maintenanceDate.toISOString() : null,
-            is_blocked: client.isBlocked,
-            documents: client.documents,
-            user_role: client.userRole || 'client',
-            user_email: client.userEmail || client.email
+            is_blocked: client.isBlocked
           })),
           { onConflict: 'id' }
         );
@@ -116,19 +114,46 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Função para carregar clientes do Supabase
   const loadClientsFromSupabase = async () => {
     try {
-      const { data, error } = await supabase
+      // Carregar clientes
+      const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
         .select('*');
 
-      if (error) {
-        console.error("Erro ao carregar clientes do Supabase:", error);
-        // Se houver erro, usamos os dados do localStorage como fallback
+      if (clientsError) {
+        console.error("Erro ao carregar clientes do Supabase:", clientsError);
         return false;
       }
 
-      if (data && data.length > 0) {
+      if (clientsData && clientsData.length > 0) {
+        // Carregar documentos de todos os clientes
+        const { data: documentsData, error: documentsError } = await supabase
+          .from('documents')
+          .select('*');
+
+        if (documentsError) {
+          console.error("Erro ao carregar documentos do Supabase:", documentsError);
+        }
+
+        // Criar um mapa de documentos por client_id
+        const documentsMap: Record<string, Document[]> = {};
+        if (documentsData) {
+          documentsData.forEach((doc: any) => {
+            if (!documentsMap[doc.client_id]) {
+              documentsMap[doc.client_id] = [];
+            }
+            documentsMap[doc.client_id].push({
+              id: doc.id,
+              name: doc.name,
+              type: doc.type,
+              size: doc.size,
+              fileUrl: doc.file_url,
+              uploadDate: new Date(doc.upload_date)
+            });
+          });
+        }
+
         // Converter os dados para o formato Client
-        const processedClients = data.map((client: any) => ({
+        const processedClients = clientsData.map((client: any) => ({
           id: client.id,
           cnpj: client.cnpj,
           name: client.name,
@@ -136,7 +161,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           email: client.email,
           maintenanceDate: client.maintenance_date ? new Date(client.maintenance_date) : null,
           isBlocked: client.is_blocked,
-          documents: client.documents || [],
+          documents: documentsMap[client.id] || [],
           userRole: client.user_role || 'client',
           userEmail: client.user_email || client.email
         }));
@@ -145,6 +170,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         saveClientsToStorage(processedClients); // Atualiza o localStorage com os dados do Supabase
 
         console.log("Clientes carregados do Supabase:", processedClients.length);
+        console.log("Documentos carregados:", documentsData?.length || 0);
         return true;
       }
 
@@ -155,16 +181,19 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Load clients from localStorage on component mount - apenas uma vez
+  // Load clients from Supabase on component mount - apenas uma vez
   useEffect(() => {
     if (initialized) return;
     
     const loadClients = async () => {
-      // Primeiro tentar carregar do Supabase para garantir dados consistentes
+      console.log("Iniciando carregamento de dados do Supabase...");
+      
+      // SEMPRE tentar carregar do Supabase primeiro (fonte primária de verdade)
       const supabaseLoaded = await loadClientsFromSupabase();
       
-      // Se não conseguir carregar do Supabase, usa o localStorage
+      // Se não conseguir carregar do Supabase (offline ou erro), usa o localStorage apenas como fallback temporário
       if (!supabaseLoaded) {
+        console.warn("Não foi possível carregar do Supabase. Usando cache local como fallback.");
         const storedClients = localStorage.getItem('extfireClients');
         
         if (storedClients) {
@@ -181,19 +210,23 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             
             setClients(processedClients);
             
-            // Já que carregamos do localStorage, vamos tentar sincronizar com o Supabase
-            if (isAdmin) {
-              syncClientsWithSupabase(processedClients);
-            }
+            // Tentar sincronizar novamente em segundo plano
+            setTimeout(() => {
+              console.log("Tentando sincronizar com Supabase em segundo plano...");
+              loadClientsFromSupabase();
+            }, 5000); // Tentar novamente após 5 segundos
           } catch (error) {
-            console.error("Error parsing clients from localStorage:", error);
+            console.error("Erro ao parsear clientes do localStorage:", error);
             // Initialize with example clients if parsing fails
             initializeWithExampleClients();
           }
         } else {
+          console.log("Nenhum dado encontrado. Inicializando com clientes de exemplo...");
           // Add default example clients if no clients exist
           initializeWithExampleClients();
         }
+      } else {
+        console.log("Dados carregados com sucesso do Supabase!");
       }
       
       setInitialized(true);
@@ -245,17 +278,12 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Update localStorage and Supabase whenever clients change
+  // Atualizar cache local e verificar cliente atual quando lista de clientes mudar
   useEffect(() => {
     if (!initialized) return;
     
-    // Salvar no localStorage
+    // Salvar no localStorage apenas como cache (não é mais a fonte primária)
     saveClientsToStorage(clients);
-    
-    // Sincronizar com o Supabase para manter consistência entre dispositivos
-    if (isAdmin) {
-      syncClientsWithSupabase(clients);
-    }
     
     // Verificar client atual
     if (currentClient) {
@@ -272,7 +300,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
     }
-  }, [clients, initialized, isAdmin]); // Adicionado isAdmin como dependência
+  }, [clients, initialized])
 
   // Função para obter apenas clientes ativos (não bloqueados)
   const getActiveClients = () => {
@@ -367,10 +395,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           password: client.password,
           email: client.email,
           maintenance_date: client.maintenanceDate ? client.maintenanceDate.toISOString() : null,
-          is_blocked: client.isBlocked,
-          documents: client.documents,
-          user_role: client.userRole || 'client',
-          user_email: client.userEmail || client.email
+          is_blocked: client.isBlocked
         }, { onConflict: 'id' });
 
       if (error) {
@@ -562,7 +587,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const addDocument = (clientId: string, document: Document) => {
+  const addDocument = async (clientId: string, document: Document) => {
     // Verificar se o usuário atual tem permissão para adicionar documentos a este cliente
     if (!isAdmin && currentUser?.clientId && currentUser.clientId !== clientId) {
       console.error("Tentativa de adicionar documento a um cliente não associado ao usuário atual");
@@ -571,6 +596,30 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     
     try {
+      // Primeiro, salvar o documento no Supabase
+      const { data: insertedDoc, error: insertError } = await supabase
+        .from('documents')
+        .insert({
+          id: document.id,
+          client_id: clientId,
+          name: document.name,
+          type: document.type,
+          size: document.size,
+          file_url: document.fileUrl,
+          upload_date: document.uploadDate.toISOString()
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Erro ao salvar documento no Supabase:", insertError);
+        toast.error("Erro ao salvar documento no banco de dados");
+        return;
+      }
+
+      console.log("Documento salvo no Supabase:", insertedDoc);
+
+      // Atualizar estado local
       const updatedClients = clients.map(client => {
         if (client.id === clientId) {
           return {
@@ -592,14 +641,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
       }
       
-      toast.success(`Documento '${document.title}' adicionado com sucesso!`);
+      toast.success(`Documento '${document.name}' adicionado com sucesso!`);
     } catch (error) {
       console.error("Erro ao adicionar documento:", error);
       toast.error("Erro ao adicionar documento. Tente novamente.");
     }
   };
 
-  const removeDocument = (clientId: string, documentId: string) => {
+  const removeDocument = async (clientId: string, documentId: string) => {
     // Verificar se o usuário atual tem permissão para remover documentos deste cliente
     if (!isAdmin && currentUser?.clientId && currentUser.clientId !== clientId) {
       console.error("Tentativa de remover documento de um cliente não associado ao usuário atual");
@@ -608,6 +657,40 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     
     try {
+      // Primeiro, encontrar o documento para obter a URL do arquivo
+      const client = clients.find(c => c.id === clientId);
+      const document = client?.documents.find(doc => doc.id === documentId);
+      
+      if (!document) {
+        console.error("Documento não encontrado");
+        toast.error("Documento não encontrado");
+        return;
+      }
+
+      // Deletar o arquivo do Storage
+      if (document.fileUrl) {
+        const { deleteFileFromStorage } = await import('@/lib/utils');
+        const deleted = await deleteFileFromStorage(document.fileUrl);
+        if (!deleted) {
+          console.warn("Não foi possível deletar o arquivo do storage, mas continuaremos com a remoção do registro");
+        }
+      }
+
+      // Deletar o registro do documento no Supabase
+      const { error: deleteError } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', documentId);
+
+      if (deleteError) {
+        console.error("Erro ao deletar documento do Supabase:", deleteError);
+        toast.error("Erro ao remover documento do banco de dados");
+        return;
+      }
+
+      console.log("Documento deletado do Supabase:", documentId);
+
+      // Atualizar estado local
       const updatedClients = clients.map(client => {
         if (client.id === clientId) {
           return {

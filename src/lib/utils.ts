@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { supabase } from "@/integrations/supabase/client"
 import { toast } from "sonner"
+import type { Document as DocumentType } from "@/types/document"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -13,7 +14,8 @@ export async function uploadFileToStorage(file: File, clientId: string): Promise
     // Criar um nome único para o arquivo
     const fileExt = file.name.split('.').pop()
     const fileName = `${clientId}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`
-    const filePath = `documents/${fileName}`
+    // Remover 'documents/' pois o bucket já se chama 'documents'
+    const filePath = fileName
 
     // Fazer upload para o bucket "documents"
     const { error: uploadError } = await supabase.storage
@@ -176,7 +178,7 @@ export async function downloadFile(fileUrl: string, fileName: string): Promise<b
 }
 
 // Nova função simplificada de download (adicione ao final do arquivo)
-export async function downloadFileDirectly(doc: Document): Promise<boolean> {
+export async function downloadFileDirectly(doc: DocumentType): Promise<boolean> {
   try {
     console.clear(); // Limpa os logs anteriores para depuração mais clara
     console.log('Iniciando download direto para:', doc.name);
