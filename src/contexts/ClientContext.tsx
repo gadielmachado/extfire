@@ -35,7 +35,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentClientToEdit, setCurrentClientToEdit] = useState<Client | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
-  const { isAdmin, currentUser } = useAuthContext?.() || { isAdmin: false, currentUser: null };
+  const { isAdmin, currentUser, isLoading: authLoading } = useAuthContext?.() || { isAdmin: false, currentUser: null, isLoading: true };
   const previousUserIdRef = useRef<string | null>(null);
   const previousClientIdRef = useRef<string | null>(null);
 
@@ -383,10 +383,18 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Load clients from Supabase on component mount ou quando inicializado for resetado
   useEffect(() => {
-    if (initialized) return;
+    // CRÍTICO: NÃO carregar enquanto Auth ainda está carregando
+    // Isso previne race condition onde documentos são buscados com clientId errado
+    if (initialized || authLoading) {
+      if (authLoading) {
+        console.log("⏳ Aguardando AuthContext terminar de carregar...");
+      }
+      return;
+    }
     
     const loadClients = async () => {
       console.log("🔄 Iniciando carregamento de dados do Supabase (fonte primária)...");
+      console.log("👤 Usuário atual:", currentUser?.email, "clientId:", currentUser?.clientId);
       
       // SEMPRE tentar carregar do Supabase primeiro (fonte primária de verdade)
       const supabaseLoaded = await loadClientsFromSupabase();
@@ -451,7 +459,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     
     loadClients();
-  }, [isAdmin, initialized]); // Agora depende de isAdmin e initialized para recarregar quando necessário
+  }, [isAdmin, initialized, authLoading]); // CRÍTICO: Agora também depende de authLoading
 
   const initializeWithExampleClients = () => {
     const exampleClient: Client = {
@@ -589,35 +597,55 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (result.success) {
           console.log(`Credenciais para o cliente ${newClient.name} ${result.operation === 'created' ? 'criadas' : 'atualizadas'} com sucesso!`);
           
-          // CRÍTICO: Atualizar user_profile com o novo client_id
-          // Isso garante que se um cliente foi excluído e recriado, o user_profile seja atualizado
+          // CRÍTICO: Aguardar e GARANTIR que user_profile seja criado/atualizado
+          // Retry logic para esperar o trigger criar o user_profile
           try {
-            console.log(`Atualizando user_profile para ${newClient.email} com novo client_id ${newClient.id}...`);
+            console.log(`⏳ Aguardando user_profile ser criado para ${newClient.email}...`);
             
-            // Buscar o user_id do auth.users
-            const { data: userData, error: userError } = await supabase
-              .from('user_profiles')
-              .select('id')
-              .eq('email', newClient.email)
-              .maybeSingle();
+            let attempts = 0;
+            const maxAttempts = 5;
+            let profileUpdated = false;
             
-            if (userData) {
-              // Atualizar user_profile existente
-              const { error: updateError } = await supabase
-                .from('user_profiles')
-                .update({
-                  client_id: newClient.id,
-                  name: newClient.name,
-                  cnpj: newClient.cnpj,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('email', newClient.email);
+            while (attempts < maxAttempts && !profileUpdated) {
+              attempts++;
               
-              if (updateError) {
-                console.error(`Erro ao atualizar user_profile:`, updateError);
+              // Aguardar um pouco antes de tentar (mais tempo na primeira tentativa)
+              await new Promise(resolve => setTimeout(resolve, attempts === 1 ? 1500 : 500));
+              
+              console.log(`Tentativa ${attempts}/${maxAttempts} de atualizar user_profile...`);
+              
+              // Buscar user_profile
+              const { data: userData, error: userError } = await supabase
+                .from('user_profiles')
+                .select('id')
+                .eq('email', newClient.email)
+                .maybeSingle();
+              
+              if (userData) {
+                // Atualizar user_profile
+                const { error: updateError } = await supabase
+                  .from('user_profiles')
+                  .update({
+                    client_id: newClient.id,
+                    name: newClient.name,
+                    cnpj: newClient.cnpj,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('email', newClient.email);
+                
+                if (!updateError) {
+                  console.log(`✅ User_profile atualizado com client_id: ${newClient.id}`);
+                  profileUpdated = true;
+                } else {
+                  console.warn(`Tentativa ${attempts} falhou:`, updateError);
+                }
               } else {
-                console.log(`✅ User_profile atualizado com novo client_id: ${newClient.id}`);
+                console.log(`User_profile ainda não existe, aguardando trigger...`);
               }
+            }
+            
+            if (!profileUpdated) {
+              console.warn(`⚠️ Não foi possível atualizar user_profile após ${maxAttempts} tentativas`);
             }
           } catch (profileError) {
             console.error(`Erro ao atualizar user_profile:`, profileError);

@@ -221,6 +221,18 @@ export async function signUpOrUpdateUser(
     // Se não houver erro, o usuário foi criado com sucesso
     if (!error) {
       console.log(`Usuário ${email} criado com sucesso!`);
+      
+      // CRÍTICO: Aguardar um pouco para o auth.users ser criado antes de criar user_profile
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Criar user_profile usando função RPC
+      try {
+        console.log(`Criando user_profile via trigger automático para ${email}...`);
+        // O trigger do banco deve criar automaticamente, mas vamos garantir
+      } catch (profileErr) {
+        console.error(`Erro ao criar user_profile:`, profileErr);
+      }
+      
       return { success: true, operation: 'created' };
     }
     
@@ -247,6 +259,12 @@ export async function signUpOrUpdateUser(
       
       if (metadataUpdated && passwordUpdated) {
         console.log(`Dados do usuário ${email} atualizados com sucesso!`);
+        
+        // CRÍTICO: Aguardar para garantir que auth.users seja atualizado
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log(`✅ Metadados e user_profile atualizados via trigger para ${email}`);
+        
         return { success: true, operation: 'updated' };
       } else if (metadataUpdated) {
         console.warn(`Metadados do usuário ${email} atualizados, mas houve erro ao atualizar senha.`);

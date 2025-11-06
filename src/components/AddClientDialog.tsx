@@ -212,6 +212,48 @@ const AddClientDialog: React.FC<AddClientDialogProps> = ({ isOpen, onClose }) =>
         return;
       }
       
+      // VALIDAÇÃO: Verificar se CNPJ já existe
+      const { data: existingClient, error: cnpjCheckError } = await supabase
+        .from('clients')
+        .select('id, name, cnpj')
+        .eq('cnpj', data.cnpj)
+        .maybeSingle();
+      
+      if (cnpjCheckError && cnpjCheckError.code !== 'PGRST116') {
+        console.error('Erro ao verificar CNPJ:', cnpjCheckError);
+        toast.error('Erro ao verificar CNPJ. Tente novamente.');
+        setIsLoading(false);
+        return;
+      }
+      
+      if (existingClient) {
+        toast.error(`CNPJ ${data.cnpj} já está cadastrado para o cliente: ${existingClient.name}`);
+        setIsLoading(false);
+        return;
+      }
+      
+      // VALIDAÇÃO: Verificar se email já existe (se fornecido)
+      if (data.createLoginCredentials && data.loginEmail) {
+        const { data: existingEmailClient, error: emailCheckError } = await supabase
+          .from('clients')
+          .select('id, name, email')
+          .eq('email', data.loginEmail)
+          .maybeSingle();
+        
+        if (emailCheckError && emailCheckError.code !== 'PGRST116') {
+          console.error('Erro ao verificar email:', emailCheckError);
+          toast.error('Erro ao verificar email. Tente novamente.');
+          setIsLoading(false);
+          return;
+        }
+        
+        if (existingEmailClient) {
+          toast.error(`Email ${data.loginEmail} já está cadastrado para o cliente: ${existingEmailClient.name}`);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
       // Gerar ID do cliente antes de criar credenciais
       const clientId = crypto.randomUUID();
       

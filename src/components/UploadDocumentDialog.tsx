@@ -57,13 +57,47 @@ const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onC
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !currentClient) return;
+    if (!file || !currentClient) {
+      if (!currentClient) {
+        console.error('❌ Nenhum cliente selecionado para upload!');
+        toast.error('Selecione um cliente primeiro');
+      }
+      return;
+    }
     
     try {
       setIsUploading(true);
       
-      // Upload para o Supabase Storage
-      const fileUrl = await uploadFileToStorage(file, currentClient.id);
+      // CRÍTICO: Revalidar cliente atual diretamente do banco ANTES do upload
+      // Isso garante que sempre usamos o ID mais recente e correto
+      console.log('🔍 Validando cliente antes do upload...');
+      
+      const { supabase } = await import('@/integrations/supabase/client');
+      const { data: clienteAtual, error: clienteErro } = await supabase
+        .from('clients')
+        .select('id, name, email')
+        .eq('id', currentClient.id)
+        .single();
+      
+      if (clienteErro || !clienteAtual) {
+        console.error('❌ Erro ao validar cliente:', clienteErro);
+        toast.error('Erro ao validar cliente. Tente novamente.');
+        return;
+      }
+      
+      const clientIdFinal = clienteAtual.id;
+      
+      // Log detalhado do cliente validado
+      console.log('📤 Upload confirmado para:', {
+        arquivo: file.name,
+        clienteNome: clienteAtual.name,
+        clienteId: clientIdFinal,
+        clienteEmail: clienteAtual.email,
+        validacao: '✅ ID revalidado do banco'
+      });
+      
+      // Upload para o Supabase Storage usando ID validado
+      const fileUrl = await uploadFileToStorage(file, clientIdFinal);
       
       if (!fileUrl) {
         toast.error('Falha ao fazer upload do arquivo');
@@ -71,18 +105,24 @@ const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onC
       }
       
       // Criar documento com URL do arquivo
-      // Usar UUID para o ID (crypto.randomUUID() é suportado em navegadores modernos)
       const newDocument: Document = {
         id: crypto.randomUUID(),
         name: file.name,
         type: getFileType(file.name),
-        size: formatFileSize(file.size), // Formato para exibição
+        size: formatFileSize(file.size),
         uploadDate: new Date(),
         fileUrl: fileUrl
       };
       
-      // Adicionar o documento ao cliente
-      await addDocument(currentClient.id, newDocument);
+      console.log('💾 Salvando documento no banco com ID VALIDADO:', {
+        documentoId: newDocument.id,
+        clienteId: clientIdFinal,
+        nome: newDocument.name,
+        validacao: '✅ Usando ID do banco, não do cache'
+      });
+      
+      // Adicionar o documento ao cliente usando ID validado
+      await addDocument(clientIdFinal, newDocument);
       
       toast.success('Documento enviado com sucesso!');
       setFile(null);
