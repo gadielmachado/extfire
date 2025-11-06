@@ -4,29 +4,22 @@ Sistema completo de gerenciamento de clientes com autenticação, controle de do
 
 ## 🚀 Início Rápido
 
-Para começar rapidamente, siga o guia de 5 minutos:
+Para começar rapidamente, siga o guia completo:
 
-👉 **[GUIA_INICIO.md](GUIA_INICIO.md)** - Configure tudo em 5 minutos
+👉 **[GUIA_COMPLETO.md](GUIA_COMPLETO.md)** ⭐ - Guia completo de configuração e uso
 
 ---
 
 ## 📚 Documentação
 
-### Guias Principais
+### Guia Principal
 
-- **[GUIA_INICIO.md](GUIA_INICIO.md)** ⭐ - Guia rápido de configuração (5 minutos)
-- **[README_RESTAURACAO.md](README_RESTAURACAO.md)** - Guia completo de restauração do banco de dados
-- **[CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md)** - Configuração de deploy na Vercel
-- **[CORRECAO_STORAGE.md](CORRECAO_STORAGE.md)** - Solução de problemas de storage e upload
-- **[RESUMO_ALTERACOES.md](RESUMO_ALTERACOES.md)** - Histórico de alterações
+- **[GUIA_COMPLETO.md](GUIA_COMPLETO.md)** ⭐ - Guia completo com todas as instruções
+- **[CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md)** - Detalhes específicos de deploy na Vercel
 
-### Scripts SQL
+### Script SQL
 
-- **[database_setup_complete.sql](database_setup_complete.sql)** ⭐ - Script completo de configuração do banco
-- **[storage_policies_completo.sql](storage_policies_completo.sql)** - Políticas de storage
-- **[fix_database_issues.sql](fix_database_issues.sql)** - Correções de problemas
-- **[fix_rls_recursion.sql](fix_rls_recursion.sql)** - Correção de recursão RLS
-- **[verificacao_instalacao.sql](verificacao_instalacao.sql)** - Verificação da instalação
+- **[database_setup_final.sql](database_setup_final.sql)** ⭐ - Script ÚNICO e DEFINITIVO de configuração do banco
 
 ---
 
@@ -89,11 +82,9 @@ const SERVICE_ROLE_KEY = "sua-service-role-key-aqui";
 
 No Supabase Dashboard:
 1. Acesse SQL Editor
-2. Execute `database_setup_complete.sql`
-3. Crie o bucket `documents` no Storage
-4. Execute `storage_policies_completo.sql`
+2. Execute `database_setup_final.sql` (script completo)
 
-👉 **Veja [GUIA_INICIO.md](GUIA_INICIO.md) para instruções detalhadas**
+👉 **Veja [GUIA_COMPLETO.md](GUIA_COMPLETO.md) para instruções detalhadas**
 
 ### 6. Iniciar Aplicação
 
@@ -155,9 +146,9 @@ extfire-master/
 │   ├── pages/              # Páginas da aplicação
 │   └── types/              # Definições TypeScript
 ├── public/                 # Arquivos estáticos
-├── database_setup_complete.sql    # Script SQL principal
-├── storage_policies_completo.sql  # Políticas de storage
-└── ...                     # Documentação e configurações
+├── database_setup_final.sql    # ⭐ Script SQL ÚNICO e DEFINITIVO
+├── GUIA_COMPLETO.md           # ⭐ Guia completo de configuração
+└── ...                     # Outras configurações
 ```
 
 ---
@@ -196,7 +187,7 @@ npm run lint
 - Índices para performance
 - Foreign keys para integridade
 
-👉 **Veja [README_RESTAURACAO.md](README_RESTAURACAO.md) para detalhes completos**
+👉 **Veja [GUIA_COMPLETO.md](GUIA_COMPLETO.md) para detalhes completos**
 
 ---
 
@@ -221,7 +212,7 @@ npm run lint
 - **Erro ao fazer upload** → Verifique bucket e políticas de storage
 - **"permission denied"** → Verifique se o usuário é admin
 
-👉 **Veja [CORRECAO_STORAGE.md](CORRECAO_STORAGE.md) para mais soluções**
+👉 **Veja [GUIA_COMPLETO.md](GUIA_COMPLETO.md) seção Troubleshooting para mais soluções**
 
 ---
 
@@ -235,10 +226,8 @@ npm run lint
 
 ### Documentação do Projeto
 
-- [GUIA_INICIO.md](GUIA_INICIO.md) - Comece aqui
-- [README_RESTAURACAO.md](README_RESTAURACAO.md) - Guia completo
-- [CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md) - Deploy
-- [CORRECAO_STORAGE.md](CORRECAO_STORAGE.md) - Problemas técnicos
+- [GUIA_COMPLETO.md](GUIA_COMPLETO.md) ⭐ - Guia completo e definitivo
+- [CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md) - Deploy na Vercel
 
 ---
 
@@ -270,8 +259,8 @@ Para contribuir com o projeto:
 
 ---
 
-**Última atualização**: Outubro 2025  
-**Versão**: 2.0  
+**Última atualização**: Novembro 2024  
+**Versão**: 2.1  
 **Status**: ✅ Produção
 
 ---

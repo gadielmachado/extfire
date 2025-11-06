@@ -1,14 +1,8 @@
 -- ====================================================
--- CONFIGURAÇÃO COMPLETA DO BANCO DE DADOS - ExtFire
+-- CONFIGURAÇÃO DEFINITIVA DO BANCO DE DADOS - ExtFire
 -- ====================================================
--- Este script consolidado contém TODA a configuração necessária
--- para o sistema ExtFire, incluindo:
--- - Criação de tabelas
--- - Funções auxiliares
--- - Políticas RLS
--- - Políticas de Storage
--- - Triggers de sincronização
--- - Scripts de verificação
+-- Este é o script ÚNICO e DEFINITIVO para configurar o banco de dados
+-- Execute este script COMPLETO no SQL Editor do Supabase
 -- ====================================================
 
 -- ====================================================
@@ -18,7 +12,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ====================================================
--- PARTE 2: CRIAÇÃO DE TABELAS
+-- PARTE 2: CRIAÇÃO/ATUALIZAÇÃO DE TABELAS
 -- ====================================================
 
 -- Tabela de Clientes
@@ -30,8 +24,6 @@ CREATE TABLE IF NOT EXISTS clients (
   email VARCHAR(255),
   maintenance_date TIMESTAMPTZ,
   is_blocked BOOLEAN DEFAULT false,
-  user_role VARCHAR(20) DEFAULT 'client',
-  user_email VARCHAR(255),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -126,7 +118,7 @@ BEGIN
     RETURN FALSE;
   END IF;
   
-  -- Verificar por email (lista de admins)
+  -- Verificar por email (lista de admins hardcoded)
   SELECT email INTO v_email
   FROM auth.users
   WHERE id = user_id;
@@ -181,29 +173,6 @@ BEGIN
   LIMIT 1;
   
   RETURN v_client_id;
-END;
-$$;
-
--- Função para verificar acesso a cliente específico
-CREATE OR REPLACE FUNCTION public.has_client_access(
-  user_id UUID,
-  target_client_id UUID
-)
-RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-STABLE
-AS $$
-BEGIN
-  IF public.is_admin(user_id) THEN
-    RETURN TRUE;
-  END IF;
-  
-  IF public.get_user_client_id(user_id) = target_client_id THEN
-    RETURN TRUE;
-  END IF;
-  
-  RETURN FALSE;
 END;
 $$;
 
@@ -334,7 +303,63 @@ CREATE TRIGGER on_client_created_or_updated
   EXECUTE FUNCTION public.sync_client_user_profile();
 
 -- ====================================================
--- PARTE 6: HABILITAR RLS
+-- PARTE 6: REMOVER TODAS AS POLÍTICAS ANTIGAS
+-- ====================================================
+
+-- Remover políticas da tabela clients
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN 
+    SELECT policyname FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'clients'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON clients', r.policyname);
+  END LOOP;
+END $$;
+
+-- Remover políticas da tabela documents
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN 
+    SELECT policyname FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'documents'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON documents', r.policyname);
+  END LOOP;
+END $$;
+
+-- Remover políticas da tabela user_profiles
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN 
+    SELECT policyname FROM pg_policies 
+    WHERE schemaname = 'public' AND tablename = 'user_profiles'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON user_profiles', r.policyname);
+  END LOOP;
+END $$;
+
+-- Remover políticas de storage
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN 
+    SELECT policyname FROM pg_policies 
+    WHERE schemaname = 'storage' AND tablename = 'objects'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', r.policyname);
+  END LOOP;
+END $$;
+
+-- ====================================================
+-- PARTE 7: HABILITAR RLS
 -- ====================================================
 
 ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
@@ -342,137 +367,103 @@ ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- ====================================================
--- PARTE 7: POLÍTICAS RLS - CLIENTS
+-- PARTE 8: POLÍTICAS RLS - CLIENTS
 -- ====================================================
 
-DROP POLICY IF EXISTS "Admins podem ver todos os clientes" ON clients;
-DROP POLICY IF EXISTS "Clientes podem ver seus próprios dados" ON clients;
-DROP POLICY IF EXISTS "Admins podem inserir clientes" ON clients;
-DROP POLICY IF EXISTS "Admins podem atualizar clientes" ON clients;
-DROP POLICY IF EXISTS "Admins podem deletar clientes" ON clients;
-DROP POLICY IF EXISTS "Admins e clientes podem ver dados autorizados" ON clients;
-DROP POLICY IF EXISTS "Apenas admins podem inserir clientes" ON clients;
-DROP POLICY IF EXISTS "Apenas admins podem atualizar clientes" ON clients;
-DROP POLICY IF EXISTS "Apenas admins podem deletar clientes" ON clients;
-DROP POLICY IF EXISTS "Clientes podem ver seus dados" ON clients;
-DROP POLICY IF EXISTS "Admins podem inserir" ON clients;
-DROP POLICY IF EXISTS "Admins podem atualizar" ON clients;
-DROP POLICY IF EXISTS "Admins podem deletar" ON clients;
-
-CREATE POLICY "Admins e clientes podem ver dados autorizados"
+-- SELECT: Admins veem todos, clientes veem apenas o seu
+CREATE POLICY "clients_select_policy"
   ON clients FOR SELECT
   USING (
     public.is_admin(auth.uid()) OR
     public.get_user_client_id(auth.uid()) = id
   );
 
-CREATE POLICY "Apenas admins podem inserir clientes"
+-- INSERT: Apenas admins
+CREATE POLICY "clients_insert_policy"
   ON clients FOR INSERT
   WITH CHECK (public.is_admin(auth.uid()));
 
-CREATE POLICY "Apenas admins podem atualizar clientes"
+-- UPDATE: Apenas admins
+CREATE POLICY "clients_update_policy"
   ON clients FOR UPDATE
-  USING (public.is_admin(auth.uid()));
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
 
-CREATE POLICY "Apenas admins podem deletar clientes"
+-- DELETE: Apenas admins
+CREATE POLICY "clients_delete_policy"
   ON clients FOR DELETE
   USING (public.is_admin(auth.uid()));
 
 -- ====================================================
--- PARTE 8: POLÍTICAS RLS - DOCUMENTS
+-- PARTE 9: POLÍTICAS RLS - DOCUMENTS
 -- ====================================================
 
-DROP POLICY IF EXISTS "Admins podem ver todos os documentos" ON documents;
-DROP POLICY IF EXISTS "Clientes podem ver seus documentos" ON documents;
-DROP POLICY IF EXISTS "Admins podem inserir documentos" ON documents;
-DROP POLICY IF EXISTS "Admins podem atualizar documentos" ON documents;
-DROP POLICY IF EXISTS "Admins podem deletar documentos" ON documents;
-DROP POLICY IF EXISTS "Admins e clientes podem ver documentos autorizados" ON documents;
-DROP POLICY IF EXISTS "Apenas admins podem inserir documentos" ON documents;
-DROP POLICY IF EXISTS "Apenas admins podem atualizar documentos" ON documents;
-DROP POLICY IF EXISTS "Apenas admins podem deletar documentos" ON documents;
-DROP POLICY IF EXISTS "Visualizar documentos autorizados" ON documents;
-DROP POLICY IF EXISTS "Inserir documentos (admin)" ON documents;
-DROP POLICY IF EXISTS "Atualizar documentos (admin)" ON documents;
-DROP POLICY IF EXISTS "Deletar documentos (admin)" ON documents;
-DROP POLICY IF EXISTS "Ver documentos" ON documents;
-DROP POLICY IF EXISTS "Inserir documentos" ON documents;
-DROP POLICY IF EXISTS "Atualizar documentos" ON documents;
-DROP POLICY IF EXISTS "Deletar documentos" ON documents;
-DROP POLICY IF EXISTS "Ver todos documentos (TEMPORÁRIO)" ON documents;
-DROP POLICY IF EXISTS "Inserir documentos (TEMPORÁRIO)" ON documents;
-DROP POLICY IF EXISTS "Atualizar documentos (TEMPORÁRIO)" ON documents;
-DROP POLICY IF EXISTS "Deletar documentos (TEMPORÁRIO)" ON documents;
-DROP POLICY IF EXISTS "Ver documentos (PERMISSIVO)" ON documents;
-DROP POLICY IF EXISTS "Inserir documentos (PERMISSIVO)" ON documents;
-DROP POLICY IF EXISTS "Atualizar documentos (PERMISSIVO)" ON documents;
-DROP POLICY IF EXISTS "Deletar documentos (PERMISSIVO)" ON documents;
-
-CREATE POLICY "Admins e clientes podem ver documentos autorizados"
+-- SELECT: Admins veem todos, clientes veem apenas seus documentos
+CREATE POLICY "documents_select_policy"
   ON documents FOR SELECT
   USING (
     public.is_admin(auth.uid()) OR
     public.get_user_client_id(auth.uid()) = client_id
   );
 
-CREATE POLICY "Apenas admins podem inserir documentos"
+-- INSERT: Admins podem inserir para qualquer cliente, clientes podem inserir para si mesmos
+CREATE POLICY "documents_insert_policy"
   ON documents FOR INSERT
+  WITH CHECK (
+    public.is_admin(auth.uid()) OR
+    public.get_user_client_id(auth.uid()) = client_id
+  );
+
+-- UPDATE: Apenas admins
+CREATE POLICY "documents_update_policy"
+  ON documents FOR UPDATE
+  USING (public.is_admin(auth.uid()))
   WITH CHECK (public.is_admin(auth.uid()));
 
-CREATE POLICY "Apenas admins podem atualizar documentos"
-  ON documents FOR UPDATE
-  USING (public.is_admin(auth.uid()));
-
-CREATE POLICY "Apenas admins podem deletar documentos"
+-- DELETE: Apenas admins
+CREATE POLICY "documents_delete_policy"
   ON documents FOR DELETE
   USING (public.is_admin(auth.uid()));
 
 -- ====================================================
--- PARTE 9: POLÍTICAS RLS - USER_PROFILES
+-- PARTE 10: POLÍTICAS RLS - USER_PROFILES
 -- ====================================================
 
-DROP POLICY IF EXISTS "Usuários podem ver seu próprio perfil" ON user_profiles;
-DROP POLICY IF EXISTS "Admins podem ver todos os perfis" ON user_profiles;
-DROP POLICY IF EXISTS "Usuários podem atualizar seu próprio perfil" ON user_profiles;
-DROP POLICY IF EXISTS "Admins podem inserir perfis" ON user_profiles;
-DROP POLICY IF EXISTS "Admins podem atualizar perfis" ON user_profiles;
-DROP POLICY IF EXISTS "Admins podem deletar perfis" ON user_profiles;
-DROP POLICY IF EXISTS "Usuários veem seu perfil, admins veem todos" ON user_profiles;
-DROP POLICY IF EXISTS "Sistema e admins podem inserir perfis" ON user_profiles;
-DROP POLICY IF EXISTS "Usuários atualizam seu perfil, admins atualizam todos" ON user_profiles;
-DROP POLICY IF EXISTS "Apenas admins podem deletar perfis" ON user_profiles;
-DROP POLICY IF EXISTS "Usuários podem ver seu perfil" ON user_profiles;
-DROP POLICY IF EXISTS "Users can view own profile" ON user_profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON user_profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
-
-CREATE POLICY "Usuários veem seu perfil, admins veem todos"
+-- SELECT: Usuários veem seu próprio perfil, admins veem todos
+CREATE POLICY "user_profiles_select_policy"
   ON user_profiles FOR SELECT
   USING (
     auth.uid() = id OR
     public.is_admin(auth.uid())
   );
 
-CREATE POLICY "Sistema e admins podem inserir perfis"
+-- INSERT: Usuário pode inserir seu próprio perfil, admins podem inserir qualquer perfil
+CREATE POLICY "user_profiles_insert_policy"
   ON user_profiles FOR INSERT
   WITH CHECK (
     auth.uid() = id OR
     public.is_admin(auth.uid())
   );
 
-CREATE POLICY "Usuários atualizam seu perfil, admins atualizam todos"
+-- UPDATE: Usuários atualizam seu perfil, admins atualizam todos
+CREATE POLICY "user_profiles_update_policy"
   ON user_profiles FOR UPDATE
   USING (
     auth.uid() = id OR
     public.is_admin(auth.uid())
+  )
+  WITH CHECK (
+    auth.uid() = id OR
+    public.is_admin(auth.uid())
   );
 
-CREATE POLICY "Apenas admins podem deletar perfis"
+-- DELETE: Apenas admins
+CREATE POLICY "user_profiles_delete_policy"
   ON user_profiles FOR DELETE
   USING (public.is_admin(auth.uid()));
 
 -- ====================================================
--- PARTE 10: CONFIGURAR BUCKET DE STORAGE
+-- PARTE 11: CONFIGURAR BUCKET DE STORAGE
 -- ====================================================
 
 -- Criar bucket se não existir
@@ -490,73 +481,43 @@ SET public = false
 WHERE id = 'documents';
 
 -- ====================================================
--- PARTE 11: POLÍTICAS DE STORAGE
+-- PARTE 12: POLÍTICAS DE STORAGE
 -- ====================================================
 
-DROP POLICY IF EXISTS "Admins podem fazer upload de documentos" ON storage.objects;
-DROP POLICY IF EXISTS "Admins podem visualizar todos os documentos" ON storage.objects;
-DROP POLICY IF EXISTS "Clientes podem visualizar seus documentos" ON storage.objects;
-DROP POLICY IF EXISTS "Admins podem atualizar documentos" ON storage.objects;
-DROP POLICY IF EXISTS "Admins podem deletar documentos" ON storage.objects;
-DROP POLICY IF EXISTS "Acesso público para leitura de documentos" ON storage.objects;
-DROP POLICY IF EXISTS "Upload de documentos (admin)" ON storage.objects;
-DROP POLICY IF EXISTS "Visualizar documentos storage (admin)" ON storage.objects;
-DROP POLICY IF EXISTS "Visualizar documentos storage (cliente)" ON storage.objects;
-DROP POLICY IF EXISTS "Atualizar documentos storage (admin)" ON storage.objects;
-DROP POLICY IF EXISTS "Deletar documentos storage (admin)" ON storage.objects;
-DROP POLICY IF EXISTS "Upload storage" ON storage.objects;
-DROP POLICY IF EXISTS "Ver storage admin" ON storage.objects;
-DROP POLICY IF EXISTS "Ver storage cliente" ON storage.objects;
-DROP POLICY IF EXISTS "Atualizar storage" ON storage.objects;
-DROP POLICY IF EXISTS "Deletar storage" ON storage.objects;
-DROP POLICY IF EXISTS "Upload storage (TEMPORÁRIO)" ON storage.objects;
-DROP POLICY IF EXISTS "Ver storage (TEMPORÁRIO)" ON storage.objects;
-DROP POLICY IF EXISTS "Atualizar storage (TEMPORÁRIO)" ON storage.objects;
-DROP POLICY IF EXISTS "Deletar storage (TEMPORÁRIO)" ON storage.objects;
-DROP POLICY IF EXISTS "Upload storage (PERMISSIVO)" ON storage.objects;
-DROP POLICY IF EXISTS "Ver storage (PERMISSIVO)" ON storage.objects;
-DROP POLICY IF EXISTS "Atualizar storage (PERMISSIVO)" ON storage.objects;
-DROP POLICY IF EXISTS "Deletar storage (PERMISSIVO)" ON storage.objects;
-DROP POLICY IF EXISTS "Permitir upload para usuários autenticados" ON storage.objects;
-DROP POLICY IF EXISTS "Permitir leitura para usuários autenticados" ON storage.objects;
-DROP POLICY IF EXISTS "Permitir atualização para usuários autenticados" ON storage.objects;
-DROP POLICY IF EXISTS "Permitir deleção para usuários autenticados" ON storage.objects;
-
--- INSERT: Admins podem fazer upload
-CREATE POLICY "Admins podem fazer upload de documentos"
+-- INSERT: Admins podem fazer upload para qualquer pasta, clientes podem fazer upload na sua pasta
+CREATE POLICY "storage_insert_policy"
 ON storage.objects FOR INSERT
+WITH CHECK (
+  bucket_id = 'documents' AND (
+    public.is_admin(auth.uid()) OR
+    (storage.foldername(name))[1] = public.get_user_client_id(auth.uid())::TEXT
+  )
+);
+
+-- SELECT: Admins veem tudo, clientes veem apenas arquivos na sua pasta
+CREATE POLICY "storage_select_policy"
+ON storage.objects FOR SELECT
+USING (
+  bucket_id = 'documents' AND (
+    public.is_admin(auth.uid()) OR
+    (storage.foldername(name))[1] = public.get_user_client_id(auth.uid())::TEXT
+  )
+);
+
+-- UPDATE: Apenas admins
+CREATE POLICY "storage_update_policy"
+ON storage.objects FOR UPDATE
+USING (
+  bucket_id = 'documents' AND
+  public.is_admin(auth.uid())
+)
 WITH CHECK (
   bucket_id = 'documents' AND
   public.is_admin(auth.uid())
 );
 
--- SELECT: Admins veem tudo
-CREATE POLICY "Admins podem visualizar todos os documentos"
-ON storage.objects FOR SELECT
-USING (
-  bucket_id = 'documents' AND
-  public.is_admin(auth.uid())
-);
-
--- SELECT: Clientes veem apenas seus arquivos
-CREATE POLICY "Clientes podem visualizar seus documentos"
-ON storage.objects FOR SELECT
-USING (
-  bucket_id = 'documents' AND
-  auth.uid() IS NOT NULL AND
-  (storage.foldername(name))[1] = public.get_user_client_id(auth.uid())::TEXT
-);
-
--- UPDATE: Apenas admins
-CREATE POLICY "Admins podem atualizar documentos"
-ON storage.objects FOR UPDATE
-USING (
-  bucket_id = 'documents' AND
-  public.is_admin(auth.uid())
-);
-
 -- DELETE: Apenas admins
-CREATE POLICY "Admins podem deletar documentos"
+CREATE POLICY "storage_delete_policy"
 ON storage.objects FOR DELETE
 USING (
   bucket_id = 'documents' AND
@@ -564,10 +525,10 @@ USING (
 );
 
 -- ====================================================
--- PARTE 12: POPULAR USER_PROFILES COM USUÁRIOS EXISTENTES
+-- PARTE 13: POPULAR USER_PROFILES COM USUÁRIOS EXISTENTES
 -- ====================================================
 
--- Inserir usuários que ainda não têm perfil
+-- Inserir perfis para usuários que ainda não têm
 INSERT INTO user_profiles (id, email, name, role, created_at, updated_at)
 SELECT 
   u.id,
@@ -591,7 +552,7 @@ WHERE NOT EXISTS (
 ON CONFLICT (id) DO NOTHING;
 
 -- ====================================================
--- PARTE 13: VERIFICAÇÃO FINAL
+-- PARTE 14: VERIFICAÇÃO FINAL
 -- ====================================================
 
 DO $$
@@ -601,40 +562,46 @@ BEGIN
   RAISE NOTICE '║  ✅ CONFIGURAÇÃO COMPLETA DO BANCO DE DADOS           ║';
   RAISE NOTICE '╚════════════════════════════════════════════════════════╝';
   RAISE NOTICE '';
-  RAISE NOTICE '📋 COMPONENTES CRIADOS:';
+  RAISE NOTICE '📋 COMPONENTES CRIADOS/ATUALIZADOS:';
   RAISE NOTICE '  ✓ Tabelas: clients, documents, user_profiles';
-  RAISE NOTICE '  ✓ Funções auxiliares (is_admin, get_user_client_id, etc.)';
-  RAISE NOTICE '  ✓ Triggers de sincronização';
+  RAISE NOTICE '  ✓ Funções auxiliares (is_admin, get_user_client_id, sync_user_profile)';
+  RAISE NOTICE '  ✓ Triggers de sincronização automática';
   RAISE NOTICE '  ✓ Políticas RLS para todas as tabelas';
   RAISE NOTICE '  ✓ Bucket de Storage e políticas';
   RAISE NOTICE '  ✓ User_profiles sincronizados';
   RAISE NOTICE '';
-  RAISE NOTICE '🔄 PRÓXIMOS PASSOS:';
-  RAISE NOTICE '  1. Verifique se tudo foi criado corretamente';
-  RAISE NOTICE '  2. Teste o login na aplicação';
-  RAISE NOTICE '  3. Teste upload/visualização de documentos';
+  RAISE NOTICE '🔒 POLÍTICAS DE SEGURANÇA:';
+  RAISE NOTICE '  ✓ Admins: Acesso completo a tudo';
+  RAISE NOTICE '  ✓ Clientes: Acesso apenas aos seus próprios dados';
+  RAISE NOTICE '  ✓ Clientes podem fazer upload de documentos';
+  RAISE NOTICE '';
+  RAISE NOTICE '🎯 PRÓXIMOS PASSOS:';
+  RAISE NOTICE '  1. Recarregue a aplicação';
+  RAISE NOTICE '  2. Teste o login';
+  RAISE NOTICE '  3. Teste exclusão de clientes';
+  RAISE NOTICE '  4. Teste upload de documentos (admin e cliente)';
   RAISE NOTICE '';
 END $$;
 
--- Verificar tabelas criadas
+-- Verificar tabelas
 SELECT 
-  'TABELAS' as tipo,
-  table_name as nome
-FROM information_schema.tables
+  '📊 TABELAS' as info,
+  table_name as nome,
+  (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as colunas
+FROM information_schema.tables t
 WHERE table_schema = 'public'
   AND table_name IN ('clients', 'documents', 'user_profiles')
 ORDER BY table_name;
 
--- Verificar funções criadas
+-- Verificar funções
 SELECT 
-  'FUNÇÕES' as tipo,
+  '⚙️ FUNÇÕES' as info,
   routine_name as nome
 FROM information_schema.routines
 WHERE routine_schema = 'public'
   AND routine_name IN (
     'is_admin',
     'get_user_client_id',
-    'has_client_access',
     'sync_user_profile',
     'handle_new_user',
     'handle_user_metadata_update',
@@ -644,7 +611,7 @@ ORDER BY routine_name;
 
 -- Verificar políticas RLS
 SELECT 
-  'POLÍTICAS RLS' as tipo,
+  '🔒 POLÍTICAS RLS' as info,
   tablename as tabela,
   COUNT(*) as quantidade
 FROM pg_policies
@@ -653,20 +620,27 @@ WHERE schemaname = 'public'
 GROUP BY tablename
 ORDER BY tablename;
 
--- Verificar bucket e políticas de storage
+-- Verificar políticas de storage
 SELECT 
-  'STORAGE' as tipo,
-  id as bucket,
-  public as publico
+  '💾 STORAGE POLICIES' as info,
+  COUNT(*) as quantidade
+FROM pg_policies
+WHERE schemaname = 'storage' AND tablename = 'objects';
+
+-- Verificar bucket
+SELECT 
+  '📦 BUCKET' as info,
+  id as nome,
+  CASE WHEN public THEN '⚠️ Público' ELSE '✅ Privado' END as status
 FROM storage.buckets
 WHERE id = 'documents';
 
 -- Verificar user_profiles
 SELECT 
-  'USER_PROFILES' as tipo,
+  '👥 USER_PROFILES' as info,
   COUNT(*) as total,
   COUNT(CASE WHEN role = 'admin' THEN 1 END) as admins,
-  COUNT(CASE WHEN role = 'client' THEN 1 END) as clients
+  COUNT(CASE WHEN role = 'client' THEN 1 END) as clientes
 FROM user_profiles;
 
 -- ====================================================

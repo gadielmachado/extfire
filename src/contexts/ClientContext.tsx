@@ -814,7 +814,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const { error } = await supabase
             .from('clients')
             .delete()
-            .match({ id: clientId });
+            .eq('id', clientId);
             
           if (error) {
             console.error("Erro ao excluir cliente do Supabase:", error);
