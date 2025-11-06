@@ -347,6 +347,98 @@ Se funcionar localmente mas falhar na Vercel:
 
 ---
 
+## 🔒 IMPORTANTE: Segurança da Service Role Key
+
+### ⚠️ Atenção: Service Role Key no Código
+
+Atualmente, a **Service Role Key** está hardcoded no arquivo `src/lib/supabaseAdmin.ts`. Isso é:
+
+- ✅ **OK para desenvolvimento local**
+- ❌ **PERIGOSO para produção pública**
+
+### Por que é perigoso?
+
+A Service Role Key:
+- Tem **acesso total** ao banco de dados
+- Pode **ignorar todas as políticas RLS**
+- Pode **deletar qualquer dado**
+- Pode **criar/modificar usuários**
+
+Se alguém obtiver esta chave, pode:
+- ❌ Acessar todos os dados
+- ❌ Deletar todo o banco
+- ❌ Criar usuários admin falsos
+
+### ✅ Solução Recomendada para Produção
+
+**Opção 1: Usar Backend/API Routes (Mais Seguro)**
+
+1. Criar API routes no backend
+2. Mover funções administrativas para o backend
+3. Usar Service Role Key apenas no backend
+4. Frontend chama as API routes
+
+**Opção 2: Usar Edge Functions do Supabase**
+
+1. Criar Edge Functions no Supabase
+2. Usar Service Role Key nas Edge Functions
+3. Frontend chama as Edge Functions
+4. Service Role Key nunca é exposta
+
+**Opção 3: Não usar Service Role Key (Mais Simples)**
+
+Para este projeto específico:
+- As funções em `supabaseAdmin.ts` não são essenciais
+- Você pode usar apenas a Anon Key
+- Deletar usuários pode ser feito manualmente no Supabase Dashboard
+
+### 🛡️ Como Proteger Agora
+
+**Passo 1: Criar arquivo `.env.local`**
+
+```bash
+# Na raiz do projeto
+touch .env.local
+```
+
+**Passo 2: Adicionar ao `.env.local`:**
+
+```env
+VITE_SUPABASE_URL=https://dwhbznsijdsiwccamfvd.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aGJ6bnNpamRzaXdjY2FtZnZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwNzUyMTEsImV4cCI6MjA3NTY1MTIxMX0.WhU7sghKmYJTARkulQmDId8obT_iCcI5xMHKdDdItjg
+# NÃO ADICIONE A SERVICE_ROLE_KEY AQUI EM PRODUÇÃO
+```
+
+**Passo 3: Verificar `.gitignore`**
+
+```bash
+# Certifique-se que o .gitignore contém:
+.env.local
+.env*.local
+```
+
+**Passo 4: Na Vercel, adicione APENAS:**
+
+```
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+```
+
+**❌ NUNCA adicione na Vercel:**
+```
+VITE_SERVICE_ROLE_KEY  # ← NUNCA!
+```
+
+### 📝 Checklist de Segurança
+
+- [ ] `.env.local` criado localmente
+- [ ] `.env.local` está no `.gitignore`
+- [ ] Service Role Key **não** está no Git
+- [ ] Vercel tem apenas `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
+- [ ] Service Role Key não é usada no frontend em produção
+
+---
+
 ## 🚀 Depois que Funcionar
 
 Considere também:
@@ -359,12 +451,16 @@ Considere também:
    
 3. **Habilitar Analytics** (opcional)
    - Vercel > Analytics
+   
+4. **Mover Service Role Key para backend** (recomendado)
+   - Criar API routes
+   - Usar Edge Functions do Supabase
 
 ---
 
-**Última Atualização**: Outubro de 2025  
+**Última Atualização**: Novembro 2024  
 **Projeto**: ExtFire  
-**Versão**: 2.0
+**Versão**: 2.1
 
 ---
 
