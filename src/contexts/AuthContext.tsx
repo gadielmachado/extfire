@@ -82,6 +82,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return currentClient.isBlocked === true;
   };
 
+  // Função auxiliar para buscar e sincronizar dados do user_profile
+  const syncUserDataFromProfile = async (userId: string, userEmail: string) => {
+    try {
+      // Buscar dados do user_profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('client_id, role, name, cnpj')
+        .eq('id', userId)
+        .single();
+      
+      if (profileError) {
+        console.warn('Não foi possível buscar user_profile:', profileError);
+        return null;
+      }
+      
+      if (profileData) {
+        console.log(`✅ Dados do user_profile carregados:`, {
+          clientId: profileData.client_id,
+          role: profileData.role,
+          name: profileData.name
+        });
+        
+        return {
+          clientId: profileData.client_id,
+          role: profileData.role,
+          name: profileData.name,
+          cnpj: profileData.cnpj
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Erro ao buscar user_profile:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     // Função para garantir que os emails de admin existam no Supabase
     const ensureAdminUsersExist = async () => {
@@ -160,22 +197,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Configure a listener for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         setSession(session);
         if (session?.user) {
           // Verificar se o usuário é admin baseado na lista de emails
           const userIsAdmin = isAdminEmail(session.user.email);
           setIsAdmin(userIsAdmin);
           
+          // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto
+          const profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
+          
           // Map Supabase user to our User type
           const user: User = {
             id: session.user.id,
-            cnpj: session.user.user_metadata?.cnpj || '',
-            name: session.user.user_metadata?.name || 'Usuário',
+            cnpj: profileData?.cnpj || session.user.user_metadata?.cnpj || '',
+            name: profileData?.name || session.user.user_metadata?.name || 'Usuário',
             email: session.user.email || '',
             role: userIsAdmin ? 'admin' : 'client',
-            clientId: session.user.user_metadata?.clientId || null
+            // IMPORTANTE: Usar clientId do user_profile como fonte de verdade
+            clientId: profileData?.clientId || session.user.user_metadata?.clientId || null
           };
+          
+          console.log('👤 Usuário autenticado:', {
+            email: user.email,
+            role: user.role,
+            clientId: user.clientId,
+            source: profileData ? 'user_profile' : 'metadata'
+          });
+          
           setCurrentUser(user);
           localStorage.setItem('extfireUser', JSON.stringify(user));
         } else {
@@ -187,20 +236,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         // Verificar se o usuário é admin baseado na lista de emails
         const userIsAdmin = isAdminEmail(session.user.email);
         setIsAdmin(userIsAdmin);
         
+        // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto
+        const profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
+        
         const user: User = {
           id: session.user.id,
-          cnpj: session.user.user_metadata?.cnpj || '',
-          name: session.user.user_metadata?.name || 'Usuário',
+          cnpj: profileData?.cnpj || session.user.user_metadata?.cnpj || '',
+          name: profileData?.name || session.user.user_metadata?.name || 'Usuário',
           email: session.user.email || '',
           role: userIsAdmin ? 'admin' : 'client',
-          clientId: session.user.user_metadata?.clientId || null
+          // IMPORTANTE: Usar clientId do user_profile como fonte de verdade
+          clientId: profileData?.clientId || session.user.user_metadata?.clientId || null
         };
+        
+        console.log('👤 Sessão existente carregada:', {
+          email: user.email,
+          role: user.role,
+          clientId: user.clientId,
+          source: profileData ? 'user_profile' : 'metadata'
+        });
+        
         setCurrentUser(user);
         localStorage.setItem('extfireUser', JSON.stringify(user));
       }
@@ -453,27 +514,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Se for cliente e não tiver clientId, tentar encontrar pelo email
         if (!isAdminEmail(cleanEmail) && !userClientId) {
-          // Tentar obter a lista de clientes do localStorage
-          const storedClients = localStorage.getItem('extfireClients');
+          // Tentar buscar diretamente do banco de dados
+          const { data: clientData, error: clientError } = await supabase
+            .from('clients')
+            .select('id, cnpj')
+            .eq('email', cleanEmail)
+            .single();
           
-          if (storedClients) {
-            const clients = JSON.parse(storedClients);
-            const matchingClient = clients.find((client: any) => 
-              client.email && client.email.toLowerCase() === cleanEmail
-            );
+          if (!clientError && clientData) {
+            console.log(`✅ Cliente encontrado no banco: ${clientData.id}`);
+            userClientId = clientData.id;
+            userCnpj = clientData.cnpj;
+          } else {
+            // Fallback: Tentar obter a lista de clientes do localStorage
+            const storedClients = localStorage.getItem('extfireClients');
             
-            if (matchingClient) {
-              console.log(`Encontrou cliente correspondente ao email ${cleanEmail}, ID: ${matchingClient.id}`);
-              userClientId = matchingClient.id;
-              userCnpj = matchingClient.cnpj;
+            if (storedClients) {
+              const clients = JSON.parse(storedClients);
+              const matchingClient = clients.find((client: any) => 
+                client.email && client.email.toLowerCase() === cleanEmail
+              );
               
-              // Também atualizar metadados no auth.users para consistência
-              const { updateUserMetadata } = await import('@/lib/supabaseAdmin');
-              await updateUserMetadata(cleanEmail, {
-                ...data.user.user_metadata,
-                clientId: userClientId,
-                cnpj: userCnpj
-              });
+              if (matchingClient) {
+                console.log(`Encontrou cliente correspondente ao email ${cleanEmail}, ID: ${matchingClient.id}`);
+                userClientId = matchingClient.id;
+                userCnpj = matchingClient.cnpj;
+              }
             }
           }
         }
@@ -493,10 +559,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Não impede o login, apenas registra o aviso
         } else {
           console.log(`✅ User_profile sincronizado com sucesso para ${cleanEmail}`);
-          }
+        }
+        
+        // NOVO: Buscar dados atualizados do user_profile após sincronização
+        const profileData = await syncUserDataFromProfile(data.user.id, cleanEmail);
+        
+        if (profileData && profileData.clientId) {
+          console.log(`✅ ClientId atualizado do user_profile: ${profileData.clientId}`);
+          
+          // Atualizar currentUser com dados do user_profile
+          const updatedUser: User = {
+            id: data.user.id,
+            cnpj: profileData.cnpj || userCnpj || '',
+            name: profileData.name || data.user.user_metadata?.name || cleanEmail,
+            email: cleanEmail,
+            role: userRole,
+            clientId: profileData.clientId // Usar clientId do user_profile
+          };
+          
+          setCurrentUser(updatedUser);
+          localStorage.setItem('extfireUser', JSON.stringify(updatedUser));
+        }
       } catch (syncErr) {
         console.error("Erro ao sincronizar user_profile:", syncErr);
-          // Não impedimos o login por causa desse erro
+        // Não impedimos o login por causa desse erro
       }
       
       setIsLoading(false);
