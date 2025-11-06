@@ -202,6 +202,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Se for admin, carregar documentos de todos os clientes
         // Se for cliente, carregar apenas documentos do seu próprio cliente
         if (isAdmin) {
+          console.log('🔍 [ADMIN] Buscando documentos de todos os clientes:', clientIds);
           // Admin pode ver todos os documentos
           const { data, error } = await supabase
             .from('documents')
@@ -210,8 +211,16 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           
           documentsData = data;
           documentsError = error;
+          console.log('📄 [ADMIN] Documentos retornados:', documentsData?.length || 0, documentsData);
+          if (error) console.error('❌ [ADMIN] Erro ao buscar documentos:', error);
         } else if (currentUser?.clientId) {
           // Cliente só pode ver seus próprios documentos
+          console.log('🔍 [CLIENTE] Buscando documentos do cliente:', {
+            clientId: currentUser.clientId,
+            email: currentUser.email,
+            isAdmin: false
+          });
+          
           const { data, error } = await supabase
             .from('documents')
             .select('*')
@@ -219,9 +228,36 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           
           documentsData = data;
           documentsError = error;
+          
+          console.log('📄 [CLIENTE] Documentos retornados:', documentsData?.length || 0);
+          console.log('📄 [CLIENTE] Detalhes dos documentos:', documentsData);
+          if (error) {
+            console.error('❌ [CLIENTE] Erro ao buscar documentos:', error);
+            console.error('❌ [CLIENTE] Código do erro:', error.code);
+            console.error('❌ [CLIENTE] Mensagem:', error.message);
+            console.error('❌ [CLIENTE] Detalhes:', error.details);
+          }
+          
+          // DIAGNÓSTICO ADICIONAL: Tentar buscar sem filtro para debug
+          console.log('🔬 [DEBUG] Tentando buscar TODOS os documentos (para diagnóstico)...');
+          const { data: allDocs, error: allDocsError } = await supabase
+            .from('documents')
+            .select('*');
+          
+          if (allDocsError) {
+            console.error('❌ [DEBUG] Erro ao buscar todos os documentos:', allDocsError);
+          } else {
+            console.log('🔬 [DEBUG] Total de documentos no banco:', allDocs?.length || 0);
+            console.log('🔬 [DEBUG] Documentos que pertencem a este cliente:', 
+              allDocs?.filter(d => d.client_id === currentUser.clientId) || []
+            );
+            console.log('🔬 [DEBUG] TODOS os documentos:', allDocs);
+          }
         } else if (currentUser?.email) {
           // Tentar encontrar cliente pelo email
           const clientByEmail = clientsData?.find(c => c.email?.toLowerCase() === currentUser.email.toLowerCase());
+          console.log('🔍 [EMAIL] Buscando cliente por email:', currentUser.email, 'Encontrado:', clientByEmail?.id);
+          
           if (clientByEmail) {
             const { data, error } = await supabase
               .from('documents')
@@ -230,17 +266,22 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             
             documentsData = data;
             documentsError = error;
+            console.log('📄 [EMAIL] Documentos retornados:', documentsData?.length || 0, documentsData);
+            if (error) console.error('❌ [EMAIL] Erro ao buscar documentos:', error);
           }
         }
       } else {
         // Se não houver clientes, tentar carregar todos (para debug - apenas admin)
         if (isAdmin) {
+          console.log('🔍 [ADMIN SEM CLIENTES] Buscando todos os documentos...');
           const { data, error } = await supabase
             .from('documents')
             .select('*');
           
           documentsData = data;
           documentsError = error;
+          console.log('📄 [ADMIN SEM CLIENTES] Documentos retornados:', documentsData?.length || 0);
+          if (error) console.error('❌ [ADMIN SEM CLIENTES] Erro:', error);
         }
       }
 
