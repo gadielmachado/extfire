@@ -176,7 +176,7 @@ BEGIN
 END;
 $$;
 
--- Função para sincronizar user_profile
+-- Função para sincronizar user_profile (com validação de client_id)
 CREATE OR REPLACE FUNCTION public.sync_user_profile(
   user_id UUID,
   user_email TEXT,
@@ -186,19 +186,42 @@ CREATE OR REPLACE FUNCTION public.sync_user_profile(
   user_cnpj TEXT DEFAULT NULL
 )
 RETURNS VOID AS $$
+DECLARE
+  v_validated_client_id UUID;
 BEGIN
+  -- Validar se o client_id existe na tabela clients
+  -- Se não existir, usar NULL para evitar erro de foreign key
+  IF user_client_id IS NOT NULL THEN
+    SELECT id INTO v_validated_client_id
+    FROM public.clients
+    WHERE id = user_client_id
+    LIMIT 1;
+    
+    -- Se não encontrou o cliente, registrar log e usar NULL
+    IF v_validated_client_id IS NULL THEN
+      RAISE WARNING 'Client ID % não existe na tabela clients. Salvando user_profile sem client_id.', user_client_id;
+    END IF;
+  ELSE
+    v_validated_client_id := NULL;
+  END IF;
+  
+  -- Inserir ou atualizar user_profile com o client_id validado
   INSERT INTO public.user_profiles (
     id, email, name, role, client_id, cnpj, created_at, updated_at
   )
   VALUES (
     user_id, user_email, COALESCE(user_name, user_email),
-    user_role, user_client_id, user_cnpj, NOW(), NOW()
+    user_role, v_validated_client_id, user_cnpj, NOW(), NOW()
   )
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
     name = COALESCE(EXCLUDED.name, user_profiles.name),
     role = EXCLUDED.role,
-    client_id = COALESCE(EXCLUDED.client_id, user_profiles.client_id),
+    -- Atualizar client_id apenas se for válido e diferente de NULL
+    client_id = CASE 
+      WHEN EXCLUDED.client_id IS NOT NULL THEN EXCLUDED.client_id
+      ELSE user_profiles.client_id
+    END,
     cnpj = COALESCE(EXCLUDED.cnpj, user_profiles.cnpj),
     updated_at = NOW();
 END;
