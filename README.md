@@ -17,9 +17,10 @@ Para começar rapidamente, siga o guia completo:
 - **[GUIA_COMPLETO.md](GUIA_COMPLETO.md)** ⭐ - Guia completo com todas as instruções
 - **[CONFIGURAR_VERCEL.md](CONFIGURAR_VERCEL.md)** - Detalhes específicos de deploy na Vercel
 
-### Script SQL
+### Scripts SQL
 
-- **[database_setup_final.sql](database_setup_final.sql)** ⭐ - Script ÚNICO e DEFINITIVO de configuração do banco
+- **[limpar_politicas.sql](limpar_politicas.sql)** 🧹 - Limpar políticas antigas (execute PRIMEIRO)
+- **[database_setup_final.sql](database_setup_final.sql)** ⭐ - Script completo de configuração (execute DEPOIS)
 
 ---
 
@@ -82,7 +83,8 @@ const SERVICE_ROLE_KEY = "sua-service-role-key-aqui";
 
 No Supabase Dashboard:
 1. Acesse SQL Editor
-2. Execute `database_setup_final.sql` (script completo)
+2. Execute `limpar_politicas.sql` (remove políticas antigas)
+3. Execute `database_setup_final.sql` (cria configuração nova)
 
 👉 **Veja [GUIA_COMPLETO.md](GUIA_COMPLETO.md) para instruções detalhadas**
 
@@ -146,7 +148,8 @@ extfire-master/
 │   ├── pages/              # Páginas da aplicação
 │   └── types/              # Definições TypeScript
 ├── public/                 # Arquivos estáticos
-├── database_setup_final.sql    # ⭐ Script SQL ÚNICO e DEFINITIVO
+├── limpar_politicas.sql        # 🧹 Limpar políticas antigas (execute primeiro)
+├── database_setup_final.sql    # ⭐ Script SQL completo (execute depois)
 ├── GUIA_COMPLETO.md           # ⭐ Guia completo de configuração
 └── ...                     # Outras configurações
 ```
