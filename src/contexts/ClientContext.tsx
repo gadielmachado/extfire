@@ -588,6 +588,40 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         
         if (result.success) {
           console.log(`Credenciais para o cliente ${newClient.name} ${result.operation === 'created' ? 'criadas' : 'atualizadas'} com sucesso!`);
+          
+          // CRÍTICO: Atualizar user_profile com o novo client_id
+          // Isso garante que se um cliente foi excluído e recriado, o user_profile seja atualizado
+          try {
+            console.log(`Atualizando user_profile para ${newClient.email} com novo client_id ${newClient.id}...`);
+            
+            // Buscar o user_id do auth.users
+            const { data: userData, error: userError } = await supabase
+              .from('user_profiles')
+              .select('id')
+              .eq('email', newClient.email)
+              .maybeSingle();
+            
+            if (userData) {
+              // Atualizar user_profile existente
+              const { error: updateError } = await supabase
+                .from('user_profiles')
+                .update({
+                  client_id: newClient.id,
+                  name: newClient.name,
+                  cnpj: newClient.cnpj,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('email', newClient.email);
+              
+              if (updateError) {
+                console.error(`Erro ao atualizar user_profile:`, updateError);
+              } else {
+                console.log(`✅ User_profile atualizado com novo client_id: ${newClient.id}`);
+              }
+            }
+          } catch (profileError) {
+            console.error(`Erro ao atualizar user_profile:`, profileError);
+          }
         } else {
           console.error(`Erro ao ${result.operation === 'created' ? 'criar' : 'atualizar'} credenciais para o cliente ${newClient.name}`);
         }
@@ -651,6 +685,31 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.error("Falha ao sincronizar cliente atualizado com Supabase.");
         toast.error(`Erro ao atualizar cliente ${updatedClient.name}. Verifique sua conexão e tente novamente.`);
         return; // Não atualiza se não conseguir sincronizar
+      }
+      
+      // Se o cliente tiver email, atualizar user_profile também
+      if (updatedClient.email && updatedClient.email.trim() !== '') {
+        try {
+          console.log(`Atualizando user_profile para ${updatedClient.email} após atualização do cliente...`);
+          
+          const { error: updateError } = await supabase
+            .from('user_profiles')
+            .update({
+              client_id: updatedClient.id,
+              name: updatedClient.name,
+              cnpj: updatedClient.cnpj,
+              updated_at: new Date().toISOString()
+            })
+            .eq('email', updatedClient.email);
+          
+          if (updateError) {
+            console.warn(`Aviso ao atualizar user_profile:`, updateError);
+          } else {
+            console.log(`✅ User_profile atualizado para ${updatedClient.email}`);
+          }
+        } catch (profileError) {
+          console.warn(`Aviso ao atualizar user_profile:`, profileError);
+        }
       }
     } catch (syncError) {
       console.error(`Erro ao sincronizar cliente atualizado com o Supabase:`, syncError);
@@ -856,6 +915,29 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             });
           } else {
             console.log(`Cliente ${clientToDelete.id} removido com sucesso da tabela clients.`);
+            
+            // CRÍTICO: Limpar client_id do user_profile para evitar referências órfãs
+            if (clientToDelete.email && !isAdminOwnEmail) {
+              try {
+                console.log(`Limpando client_id do user_profile para ${clientToDelete.email}...`);
+                
+                const { error: profileError } = await supabase
+                  .from('user_profiles')
+                  .update({
+                    client_id: null,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('email', clientToDelete.email);
+                
+                if (profileError) {
+                  console.warn(`Aviso ao limpar user_profile:`, profileError);
+                } else {
+                  console.log(`✅ Client_id removido do user_profile para ${clientToDelete.email}`);
+                }
+              } catch (profileError) {
+                console.warn(`Aviso ao limpar user_profile:`, profileError);
+              }
+            }
           }
         } catch (err) {
           console.error("Erro ao excluir cliente do Supabase:", err);
