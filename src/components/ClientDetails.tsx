@@ -71,8 +71,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       console.error('Erro ao excluir documento:', error);
       toast.error('Erro ao excluir documento');
     } finally {
-      setShowDeleteAlert(false);
-      setDocumentToDelete(null);
+        setShowDeleteAlert(false);
+        setDocumentToDelete(null);
     }
   };
 

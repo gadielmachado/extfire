@@ -493,10 +493,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Não impede o login, apenas registra o aviso
         } else {
           console.log(`✅ User_profile sincronizado com sucesso para ${cleanEmail}`);
-        }
+          }
       } catch (syncErr) {
         console.error("Erro ao sincronizar user_profile:", syncErr);
-        // Não impedimos o login por causa desse erro
+          // Não impedimos o login por causa desse erro
       }
       
       setIsLoading(false);
