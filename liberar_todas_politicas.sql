@@ -3,8 +3,6 @@
 -- Execute este script no SQL Editor do Supabase
 -- =====================================================
 
-BEGIN;
-
 -- 1. REMOVER TODAS AS POLÍTICAS EXISTENTES
 -- =====================================================
 
@@ -56,7 +54,7 @@ DROP POLICY IF EXISTS "allow_all_insert" ON storage.objects;
 DROP POLICY IF EXISTS "allow_all_update" ON storage.objects;
 DROP POLICY IF EXISTS "allow_all_delete" ON storage.objects;
 
-RAISE NOTICE '✅ Todas as políticas antigas removidas';
+-- ✅ Todas as políticas antigas removidas
 
 -- 2. CRIAR POLÍTICAS TOTALMENTE PERMISSIVAS
 -- =====================================================
@@ -79,7 +77,7 @@ CREATE POLICY "allow_all_delete" ON clients
     FOR DELETE
     USING (true);
 
-RAISE NOTICE '✅ Políticas da tabela clients criadas';
+-- ✅ Políticas da tabela clients criadas
 
 -- Tabela DOCUMENTS - Acesso Total
 CREATE POLICY "allow_all_select" ON documents
@@ -99,7 +97,7 @@ CREATE POLICY "allow_all_delete" ON documents
     FOR DELETE
     USING (true);
 
-RAISE NOTICE '✅ Políticas da tabela documents criadas';
+-- ✅ Políticas da tabela documents criadas
 
 -- Tabela USER_PROFILES - Acesso Total
 CREATE POLICY "allow_all_select" ON user_profiles
@@ -119,7 +117,7 @@ CREATE POLICY "allow_all_delete" ON user_profiles
     FOR DELETE
     USING (true);
 
-RAISE NOTICE '✅ Políticas da tabela user_profiles criadas';
+-- ✅ Políticas da tabela user_profiles criadas
 
 -- STORAGE - Acesso Total
 CREATE POLICY "allow_all_select" ON storage.objects
@@ -139,7 +137,7 @@ CREATE POLICY "allow_all_delete" ON storage.objects
     FOR DELETE
     USING (true);
 
-RAISE NOTICE '✅ Políticas do storage criadas';
+-- ✅ Políticas do storage criadas
 
 -- 3. GARANTIR QUE RLS ESTÁ ATIVADO
 -- =====================================================
@@ -149,7 +147,7 @@ ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
-RAISE NOTICE '✅ RLS ativado em todas as tabelas';
+-- ✅ RLS ativado em todas as tabelas
 
 -- 4. REMOVER FUNÇÃO RECURSIVA (se existir)
 -- =====================================================
@@ -158,9 +156,7 @@ DROP FUNCTION IF EXISTS get_user_client_ids(uuid) CASCADE;
 DROP FUNCTION IF EXISTS get_user_client_ids(text) CASCADE;
 DROP FUNCTION IF EXISTS get_user_client_ids() CASCADE;
 
-RAISE NOTICE '✅ Funções recursivas removidas';
-
-COMMIT;
+-- ✅ Funções recursivas removidas
 
 -- 5. VERIFICAÇÃO FINAL
 -- =====================================================
