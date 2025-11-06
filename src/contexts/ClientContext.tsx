@@ -37,6 +37,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [initialized, setInitialized] = useState(false);
   const { isAdmin, currentUser } = useAuthContext?.() || { isAdmin: false, currentUser: null };
   const previousUserIdRef = useRef<string | null>(null);
+  const previousClientIdRef = useRef<string | null>(null);
 
   // Função para salvar clientes no localStorage
   const saveClientsToStorage = (clientsToSave: Client[]) => {
@@ -358,21 +359,27 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Recarregar dados quando o usuário mudar (login/logout)
+  // Recarregar dados quando o usuário mudar (login/logout) OU quando clientId mudar
   useEffect(() => {
     // Resetar initialized quando o usuário muda para forçar recarregamento
-    // Usar uma ref para evitar loops infinitos
+    // Usar refs para evitar loops infinitos
     const currentUserId = currentUser?.id || null;
+    const currentClientId = currentUser?.clientId || null;
     
-    if (previousUserIdRef.current !== currentUserId) {
-      console.log("🔄 Usuário mudou, recarregando dados...", {
-        anterior: previousUserIdRef.current,
-        atual: currentUserId
+    // Criar uma chave única combinando userId e clientId
+    const currentUserKey = `${currentUserId}-${currentClientId}`;
+    const previousUserKey = `${previousUserIdRef.current}-${previousClientIdRef.current}`;
+    
+    if (previousUserKey !== currentUserKey) {
+      console.log("🔄 Usuário ou clientId mudou, recarregando dados...", {
+        anterior: { userId: previousUserIdRef.current, clientId: previousClientIdRef.current },
+        atual: { userId: currentUserId, clientId: currentClientId }
       });
       previousUserIdRef.current = currentUserId;
+      previousClientIdRef.current = currentClientId;
       setInitialized(false);
     }
-  }, [currentUser?.id, isAdmin]);
+  }, [currentUser?.id, currentUser?.clientId, isAdmin]);
 
   // Load clients from Supabase on component mount ou quando inicializado for resetado
   useEffect(() => {
@@ -763,6 +770,21 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Função para "excluir" um cliente e suas credenciais de autenticação
   const deleteClient = async (clientId: string) => {
+    // Validar clientId antes de prosseguir
+    if (!clientId || clientId.trim() === '') {
+      console.error('❌ ClientId inválido ou vazio:', clientId);
+      toast.error('Erro: ID do cliente inválido');
+      return;
+    }
+    
+    // Validar formato UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(clientId)) {
+      console.error('❌ ClientId não é um UUID válido:', clientId);
+      toast.error('Erro: Formato de ID inválido');
+      return;
+    }
+    
     // Apenas admins podem excluir clientes
     if (!isAdmin) {
       console.error("Tentativa de excluir cliente sem permissões administrativas");

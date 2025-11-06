@@ -87,25 +87,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log(`🔍 Buscando user_profile para: ${userEmail}`);
       
-      // Timeout de 3 segundos para evitar travamento
+      // Timeout aumentado para 5 segundos e com melhor tratamento
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 3000)
+        setTimeout(() => reject(new Error('Timeout')), 5000)
       );
       
+      // Query otimizada com .maybeSingle() ao invés de .single() para evitar erro se não existir
       const queryPromise = supabase
         .from('user_profiles')
         .select('client_id, role, name, cnpj')
         .eq('id', userId)
-        .single();
+        .maybeSingle(); // Mudança para maybeSingle para evitar erro quando não existe
       
       // Buscar dados do user_profile com timeout
-      const { data: profileData, error: profileError } = await Promise.race([
+      const result = await Promise.race([
         queryPromise,
         timeoutPromise
-      ]) as any;
+      ]).catch(err => {
+        // Se for timeout, retornar erro específico
+        if (err.message === 'Timeout') {
+          console.warn('⚠️ Timeout ao buscar user_profile após 5s');
+          return { data: null, error: { message: 'Timeout' } };
+        }
+        throw err;
+      }) as any;
+      
+      const { data: profileData, error: profileError } = result;
       
       if (profileError) {
-        console.warn('⚠️ Não foi possível buscar user_profile (usando fallback):', profileError.message || profileError);
+        // Só logar como warning se não for "not found"
+        if (profileError.message !== 'Timeout' && !profileError.message?.includes('not found')) {
+          console.warn('⚠️ Não foi possível buscar user_profile:', profileError.message || profileError);
+        }
         return null;
       }
       
@@ -124,9 +137,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       
+      // Se não houver dados, retornar null silenciosamente (não é erro)
       return null;
     } catch (error: any) {
-      console.warn('⚠️ Erro ao buscar user_profile (usando fallback):', error?.message || error);
+      console.warn('⚠️ Erro inesperado ao buscar user_profile:', error?.message || error);
       return null;
     }
   };

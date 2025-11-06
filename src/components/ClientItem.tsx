@@ -83,6 +83,20 @@ const ClientItem: React.FC<ClientItemProps> = ({ client, isActive, onClick }) =>
   };
 
   const handleDeleteConfirm = () => {
+    console.log('🔍 ClientItem - Tentando excluir cliente:', {
+      clientId: client.id,
+      clientName: client.name,
+      tipoId: typeof client.id,
+      idLength: client.id?.length,
+      clientCompleto: client
+    });
+    
+    if (!client.id) {
+      console.error('❌ ClientItem - ID do cliente está vazio!');
+      alert('Erro: ID do cliente não encontrado. Por favor, recarregue a página.');
+      return;
+    }
+    
     deleteClient(client.id);
     setShowDeleteConfirm(false);
   };
