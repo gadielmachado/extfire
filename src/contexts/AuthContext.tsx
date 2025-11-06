@@ -85,15 +85,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Função auxiliar para buscar e sincronizar dados do user_profile
   const syncUserDataFromProfile = async (userId: string, userEmail: string) => {
     try {
-      // Buscar dados do user_profile
-      const { data: profileData, error: profileError } = await supabase
+      console.log(`🔍 Buscando user_profile para: ${userEmail}`);
+      
+      // Timeout de 3 segundos para evitar travamento
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 3000)
+      );
+      
+      const queryPromise = supabase
         .from('user_profiles')
         .select('client_id, role, name, cnpj')
         .eq('id', userId)
         .single();
       
+      // Buscar dados do user_profile com timeout
+      const { data: profileData, error: profileError } = await Promise.race([
+        queryPromise,
+        timeoutPromise
+      ]) as any;
+      
       if (profileError) {
-        console.warn('Não foi possível buscar user_profile:', profileError);
+        console.warn('⚠️ Não foi possível buscar user_profile (usando fallback):', profileError.message || profileError);
         return null;
       }
       
@@ -113,8 +125,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       return null;
-    } catch (error) {
-      console.error('Erro ao buscar user_profile:', error);
+    } catch (error: any) {
+      console.warn('⚠️ Erro ao buscar user_profile (usando fallback):', error?.message || error);
       return null;
     }
   };
@@ -198,14 +210,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Configure a listener for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('🔐 Auth state change:', event);
         setSession(session);
         if (session?.user) {
           // Verificar se o usuário é admin baseado na lista de emails
           const userIsAdmin = isAdminEmail(session.user.email);
           setIsAdmin(userIsAdmin);
           
-          // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto
-          const profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
+          // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto (com fallback)
+          let profileData = null;
+          try {
+            profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
+          } catch (err) {
+            console.warn('⚠️ Falha ao buscar user_profile, usando metadados', err);
+          }
           
           // Map Supabase user to our User type
           const user: User = {
@@ -237,13 +255,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Check for existing session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('🔍 Verificando sessão existente...');
       if (session?.user) {
         // Verificar se o usuário é admin baseado na lista de emails
         const userIsAdmin = isAdminEmail(session.user.email);
         setIsAdmin(userIsAdmin);
         
-        // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto
-        const profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
+        // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto (com fallback)
+        let profileData = null;
+        try {
+          profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
+        } catch (err) {
+          console.warn('⚠️ Falha ao buscar user_profile, usando metadados', err);
+        }
         
         const user: User = {
           id: session.user.id,
@@ -265,6 +289,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentUser(user);
         localStorage.setItem('extfireUser', JSON.stringify(user));
       }
+      setIsLoading(false);
+    }).catch((error) => {
+      console.error('❌ Erro ao verificar sessão:', error);
       setIsLoading(false);
     });
 
