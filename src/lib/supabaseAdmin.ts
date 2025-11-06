@@ -9,7 +9,7 @@ import type { Database } from '@/integrations/supabase/types';
 const SUPABASE_URL = "https://dwhbznsijdsiwccamfvd.supabase.co";
 // ATENÇÃO: Em um ambiente real, isso deveria estar em variáveis de ambiente no servidor
 // e nunca exposto no frontend
-const SERVICE_ROLE_KEY = "SUA_SERVICE_ROLE_KEY_AQUI"; // Você precisa adicionar a service_role key do novo projeto
+const SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aGJ6bnNpamRzaXdjY2FtZnZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDA3NTIxMSwiZXhwIjoyMDc1NjUxMjExfQ.qkRD5E4-uQPBI3YIqWQjIHMgee-sG_Ed7bArFdDk6HE";
 
 // Cliente Supabase com privilégios administrativos
 export const supabaseAdmin = createClient<Database>(
