@@ -794,21 +794,17 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const isAdminOwnEmail = isAdmin && currentUser?.email && 
                               clientToDelete.email === currentUser.email;
       
-      // Importar de forma dinâmica para evitar problemas de SSR
-      const { deleteClientWithAuth } = await import('@/lib/clientService');
+      // NOTA: Não é possível excluir credenciais de autenticação do frontend
+      // por questões de segurança (requer SERVICE_ROLE_KEY).
+      // As credenciais permanecerão no Supabase Auth, mas o cliente será
+      // removido da tabela clients, o que é suficiente para o sistema.
       
       if (isAdminOwnEmail) {
-        console.log(`O cliente a ser excluído tem o mesmo email do administrador atual. Ignorando exclusão de credenciais para preservar login.`);
+        console.log(`O cliente a ser excluído tem o mesmo email do administrador atual. Preservando credenciais.`);
       } else if (clientToDelete.email) {
-        // Só excluir credenciais se não for o próprio email do admin
-        console.log(`Solicitando exclusão das credenciais para o email: ${clientToDelete.email}`);
-        const result = await deleteClientWithAuth(clientToDelete);
-        
-        if (!result) {
-          console.warn('Não foi possível excluir completamente as credenciais, mas continuando a exclusão do cliente.');
-        } else {
-          console.log(`Credenciais do cliente ${clientToDelete.name} excluídas com sucesso.`);
-        }
+        console.log(`Cliente possui email associado: ${clientToDelete.email}`);
+        console.log(`⚠️ Nota: As credenciais de autenticação não serão excluídas (requer backend).`);
+        console.log(`O usuário não poderá mais acessar o sistema pois o cliente foi removido da tabela.`);
       }
       
       // Também remover do Supabase se for admin
@@ -845,8 +841,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Atualizar o localStorage
       saveClientsToStorage(updatedClients);
       
-      // Exibir mensagem de sucesso para todos os casos, sem logout
+      // Exibir mensagem de sucesso
       toast.success(`Cliente ${clientToDelete.name} excluído com sucesso`);
+      
+      // Informar sobre as credenciais se houver email
+      if (clientToDelete.email && !isAdminOwnEmail) {
+        console.log(`ℹ️ As credenciais de ${clientToDelete.email} foram mantidas no sistema de autenticação.`);
+        console.log(`ℹ️ O usuário não poderá mais acessar pois o cliente foi removido.`);
+      }
     } catch (error) {
       console.error('Erro ao excluir cliente:', error);
       toast.error('Erro ao excluir cliente. Tente novamente mais tarde.');
