@@ -91,7 +91,19 @@ Esta é a etapa mais importante! Siga cuidadosamente.
 1. No Supabase Dashboard, vá em **SQL Editor** (menu lateral)
 2. Clique em **New Query**
 
-### Passo 2: Executar Script de Configuração
+### Passo 2: Limpar Políticas Antigas (IMPORTANTE!)
+
+**Primeiro, limpe todas as políticas antigas para evitar conflitos:**
+
+1. Abra o arquivo `limpar_politicas.sql` na raiz do projeto
+2. Copie TODO o conteúdo do arquivo
+3. Cole no SQL Editor do Supabase
+4. Clique em **RUN** (ou pressione Ctrl+Enter)
+5. Aguarde a mensagem: `✅ Perfeito! Todas as políticas foram removidas.`
+
+### Passo 3: Executar Script de Configuração
+
+**Agora execute o script principal:**
 
 1. Abra o arquivo `database_setup_final.sql` na raiz do projeto
 2. Copie TODO o conteúdo do arquivo
@@ -107,7 +119,7 @@ Esta é a etapa mais importante! Siga cuidadosamente.
 - ✅ Cria bucket de storage para documentos
 - ✅ Configura políticas de storage
 
-### Passo 3: Verificar Instalação
+### Passo 4: Verificar Instalação
 
 Após executar o script, você verá mensagens de confirmação no console do SQL Editor:
 
@@ -128,7 +140,7 @@ Após executar o script, você verá mensagens de confirmação no console do SQ
   ✓ Clientes podem fazer upload de documentos
 ```
 
-### Passo 4: Verificar Bucket de Storage
+### Passo 5: Verificar Bucket de Storage
 
 1. No Supabase Dashboard, vá em **Storage**
 2. Verifique se o bucket `documents` foi criado
@@ -249,7 +261,8 @@ extfire-master/
 │       ├── document.ts         # Tipo Document
 │       └── user.ts             # Tipo User
 ├── public/                     # Arquivos estáticos
-├── database_setup_final.sql    # ⭐ Script SQL ÚNICO e DEFINITIVO
+├── limpar_politicas.sql        # 🧹 Script para limpar políticas antigas (execute primeiro)
+├── database_setup_final.sql    # ⭐ Script SQL ÚNICO e DEFINITIVO (execute depois)
 ├── GUIA_COMPLETO.md           # ⭐ Este guia
 ├── CONFIGURAR_VERCEL.md       # Guia de deploy Vercel
 ├── README.md                   # Documentação principal
@@ -328,7 +341,8 @@ O sistema implementa Row Level Security (RLS) com políticas granulares.
 
 **Erro: "permission denied for table"**
 
-- ✅ Execute novamente o script `database_setup_final.sql`
+- ✅ Execute primeiro o script `limpar_politicas.sql` para remover políticas antigas
+- ✅ Depois execute o script `database_setup_final.sql`
 - ✅ Verifique se as políticas RLS foram criadas em **Authentication** > **Policies**
 - ✅ Confirme que seu usuário é admin (email na lista hardcoded)
 
@@ -338,13 +352,14 @@ O sistema implementa Row Level Security (RLS) com políticas granulares.
 
 - ✅ Verifique se o bucket `documents` existe em **Storage**
 - ✅ Confirme que o bucket é **privado** (não público)
-- ✅ Execute o script `database_setup_final.sql` que cria as políticas de storage
+- ✅ Execute primeiro `limpar_politicas.sql`, depois `database_setup_final.sql`
 
 **Documentos desaparecem após reload**
 
-- ✅ Execute o script `database_setup_final.sql` para corrigir políticas RLS
+- ✅ Execute primeiro `limpar_politicas.sql`, depois `database_setup_final.sql`
 - ✅ Verifique se você está logado como admin ou como o cliente correto
 - ✅ Confirme que as políticas de SELECT em `documents` estão corretas
+- ✅ Limpe o cache do navegador (Ctrl + Shift + R)
 
 ### Problemas com Exclusão de Cliente
 
@@ -483,7 +498,8 @@ Use este checklist para garantir que tudo está configurado corretamente:
 
 ### Configuração Supabase
 - [ ] Projeto criado no Supabase
-- [ ] Script `database_setup_final.sql` executado
+- [ ] Script `limpar_politicas.sql` executado (limpar políticas antigas)
+- [ ] Script `database_setup_final.sql` executado (criar configuração nova)
 - [ ] Tabelas criadas: `clients`, `documents`, `user_profiles`
 - [ ] Bucket `documents` criado no Storage (privado)
 - [ ] Políticas RLS configuradas
