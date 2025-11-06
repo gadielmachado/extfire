@@ -820,20 +820,36 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
+    // Se for cliente e não tiver clientId, tentar obter pelo email
+    let effectiveClientId = clientId;
+    if (!isAdmin && !currentUser?.clientId && currentUser?.email) {
+      const clientByEmail = clients.find(c => c.email?.toLowerCase() === currentUser.email.toLowerCase());
+      if (clientByEmail) {
+        effectiveClientId = clientByEmail.id;
+        console.log(`📧 Cliente identificado pelo email: ${clientByEmail.name} (${effectiveClientId})`);
+      } else {
+        toast.error("Não foi possível identificar seu cliente. Entre em contato com o suporte.");
+        return;
+      }
+    }
+    
     try {
-      // Extrair o tamanho real em bytes do arquivo da URL ou do objeto Document
-      // Se o size já está formatado (ex: "1.5 MB"), precisamos do tamanho original
-      // Por enquanto, vamos usar o size como string (o Supabase aceita string)
+      console.log(`📤 Tentando adicionar documento para o cliente ${effectiveClientId}...`);
+      console.log(`👤 Usuário atual:`, {
+        isAdmin,
+        clientId: currentUser?.clientId,
+        email: currentUser?.email
+      });
       
       // Primeiro, salvar o documento no Supabase
       const { data: insertedDoc, error: insertError } = await supabase
         .from('documents')
         .insert({
           id: document.id,
-          client_id: clientId,
+          client_id: effectiveClientId,
           name: document.name,
           type: document.type,
-          size: document.size, // Já é string, mantém o formato
+          size: document.size,
           file_url: document.fileUrl,
           upload_date: document.uploadDate.toISOString()
         })
@@ -841,7 +857,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         .single();
 
       if (insertError) {
-        console.error("Erro ao salvar documento no Supabase:", insertError);
+        console.error("❌ Erro ao salvar documento no Supabase:", insertError);
         console.error("Detalhes do erro:", {
           code: insertError.code,
           message: insertError.message,
@@ -861,21 +877,19 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log("✅ Documento salvo no Supabase:", insertedDoc);
 
       // CRÍTICO: Forçar recarregamento COMPLETO do Supabase para garantir consistência
-      // Isso resolve o problema de documentos que desaparecem ao atualizar a página
       console.log("🔄 Forçando recarregamento completo dos dados do Supabase...");
       
-      // Opção 1: Recarregar apenas os documentos do cliente (mais rápido)
-      const reloadSuccess = await reloadClientDocuments(clientId);
+      // Recarregar os documentos do cliente
+      const reloadSuccess = await reloadClientDocuments(effectiveClientId);
       
       if (!reloadSuccess) {
         console.warn("⚠️ Falha ao recarregar documentos, tentando reload completo...");
-        // Opção 2: Recarregar TUDO (fallback)
         await loadClientsFromSupabase();
       }
       
       toast.success(`Documento '${document.name}' adicionado com sucesso!`);
     } catch (error) {
-      console.error("Erro ao adicionar documento:", error);
+      console.error("❌ Erro ao adicionar documento:", error);
       toast.error("Erro ao adicionar documento. Tente novamente.");
     }
   };
