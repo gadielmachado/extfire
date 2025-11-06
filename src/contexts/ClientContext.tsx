@@ -810,6 +810,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Também remover do Supabase se for admin
       if (isAdmin) {
         try {
+          console.log(`🔍 DEBUG - Removendo cliente:`, {
+            clientId: clientId,
+            clientToDeleteId: clientToDelete.id,
+            tipoClientId: typeof clientId,
+            valorClientId: clientId,
+            clientIdLength: clientId?.length
+          });
+          
           console.log(`Removendo cliente ${clientToDelete.id} da tabela clients no Supabase...`);
           const { error } = await supabase
             .from('clients')
@@ -818,6 +826,12 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             
           if (error) {
             console.error("Erro ao excluir cliente do Supabase:", error);
+            console.error("🔍 DEBUG - Detalhes do erro:", {
+              code: error.code,
+              message: error.message,
+              details: error.details,
+              hint: error.hint
+            });
           } else {
             console.log(`Cliente ${clientToDelete.id} removido com sucesso da tabela clients.`);
           }
