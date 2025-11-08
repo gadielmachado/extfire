@@ -84,19 +84,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Função auxiliar para buscar e sincronizar dados do user_profile
   const syncUserDataFromProfile = async (userId: string, userEmail: string) => {
-    // Timeout geral de 3 segundos para toda a função
-    const timeoutPromise = new Promise<null>((resolve) => {
-      setTimeout(() => {
-        console.warn(`⏱️ Timeout geral de 3s atingido para ${userEmail}`);
-        resolve(null);
-      }, 3000);
-    });
-    
-    const fetchPromise = async (): Promise<any> => {
-      try {
-        console.log(`🔍 Buscando user_profile para: ${userEmail}`);
+    try {
+      console.log(`🔍 Buscando user_profile para: ${userEmail}`);
+      
+      // Tentativa 1: Buscar do user_profile com retry limitado para não travar
+      const maxRetries = 2; // Reduzido de 5 para 2 para não travar o login
+      let attempt = 0;
+      let profileData = null;
+      
+      while (attempt < maxRetries && !profileData) {
+        attempt++;
         
-        // Tentativa 1: Buscar do user_profile (rápido, 1 tentativa)
         try {
           const { data, error } = await supabase
             .from('user_profiles')
@@ -110,67 +108,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: data.role
             });
             
-            return {
+            profileData = {
               clientId: data.client_id,
               role: data.role,
               name: data.name,
               cnpj: data.cnpj
             };
+            break;
           }
           
           if (error) {
             console.warn(`⚠️ Erro ao buscar user_profile:`, error.message);
           }
+          
+          // Aguardar apenas 300ms antes de tentar novamente (mais rápido)
+          if (attempt < maxRetries && !profileData) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
         } catch (err: any) {
           console.warn(`⚠️ Exceção ao buscar user_profile:`, err.message);
-        }
-        
-        // Tentativa 2: Se user_profile falhou, buscar direto da tabela clients
-        console.log(`🔄 Buscando client_id direto da tabela clients para: ${userEmail}`);
-        
-        try {
-          const { data: clientData, error: clientError } = await supabase
-            .from('clients')
-            .select('id, name, cnpj')
-            .eq('email', userEmail)
-            .maybeSingle();
           
-          if (!clientError && clientData) {
-            console.log(`✅ Cliente encontrado na tabela clients:`, {
-              clientId: clientData.id,
-              name: clientData.name
-            });
-            
-            return {
-              clientId: clientData.id,
-              role: 'client',
-              name: clientData.name,
-              cnpj: clientData.cnpj
-            };
+          // Aguardar apenas 300ms antes de tentar novamente
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 300));
           }
-          
-          if (clientError) {
-            console.warn('⚠️ Erro ao buscar da tabela clients:', clientError.message);
-          }
-        } catch (err: any) {
-          console.warn('⚠️ Exceção ao buscar da tabela clients:', err.message);
         }
-        
-        // Se nada funcionou, retornar null
-        console.warn(`⚠️ Não foi possível obter dados do perfil para ${userEmail}`);
-        return null;
-      } catch (error: any) {
-        console.error('❌ Erro crítico ao buscar dados do perfil:', error?.message || error);
-        return null;
       }
-    };
-    
-    // Usar Promise.race para garantir que não trave
-    try {
-      const result = await Promise.race([fetchPromise(), timeoutPromise]);
-      return result;
+      
+      // Se encontrou no user_profile, retornar
+      if (profileData) {
+        return profileData;
+      }
+      
+      // Tentativa 2: Se user_profile falhou após todas as tentativas, buscar direto da tabela clients
+      console.log(`🔄 Buscando client_id direto da tabela clients para: ${userEmail}`);
+      
+      try {
+        const { data: clientData, error: clientError } = await supabase
+          .from('clients')
+          .select('id, name, cnpj')
+          .eq('email', userEmail)
+          .maybeSingle();
+        
+        if (!clientError && clientData) {
+          console.log(`✅ Cliente encontrado na tabela clients:`, {
+            clientId: clientData.id,
+            name: clientData.name
+          });
+          
+          return {
+            clientId: clientData.id,
+            role: 'client',
+            name: clientData.name,
+            cnpj: clientData.cnpj
+          };
+        }
+        
+        if (clientError) {
+          console.warn('⚠️ Erro ao buscar da tabela clients:', clientError.message);
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Exceção ao buscar da tabela clients:', err.message);
+      }
+      
+      // Se nada funcionou, retornar null
+      console.warn(`⚠️ Não foi possível obter dados do perfil para ${userEmail} após ${maxRetries} tentativas`);
+      return null;
     } catch (error: any) {
-      console.error('❌ Erro no Promise.race:', error?.message || error);
+      console.error('❌ Erro crítico ao buscar dados do perfil:', error?.message || error);
       return null;
     }
   };
@@ -289,10 +294,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           setCurrentUser(user);
           localStorage.setItem('extfireUser', JSON.stringify(user));
+          setIsLoading(false); // CRÍTICO: Definir loading como false após carregar usuário
         } else {
           setCurrentUser(null);
           setIsAdmin(false);
           localStorage.removeItem('extfireUser');
+          setIsLoading(false); // CRÍTICO: Definir loading como false mesmo sem usuário
         }
       }
     );

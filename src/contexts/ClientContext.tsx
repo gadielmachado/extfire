@@ -392,6 +392,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
+    // Carregar dados imediatamente após AuthContext estar pronto
     const loadClients = async () => {
       console.log("🔄 Iniciando carregamento de dados do Supabase (fonte primária)...");
       console.log("👤 Usuário atual:", currentUser?.email, "clientId:", currentUser?.clientId);
@@ -421,8 +422,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             
             // Tentar sincronizar novamente em segundo plano várias vezes
             let retryCount = 0;
-            const maxRetries = 3;
-            const retryInterval = 3000; // 3 segundos
+            const maxRetries = 5; // Aumentado para 5 tentativas
+            const retryInterval = 2000; // Reduzido para 2 segundos
             
             const retrySync = async () => {
               retryCount++;
