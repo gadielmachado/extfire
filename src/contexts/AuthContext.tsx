@@ -259,97 +259,263 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Configure a listener for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('🔐 Auth state change:', event);
-        setSession(session);
-        if (session?.user) {
-          // Verificar se o usuário é admin baseado na lista de emails
-          const userIsAdmin = isAdminEmail(session.user.email);
-          setIsAdmin(userIsAdmin);
+        console.log('🔐 Auth state change:', event, 'Session user:', session?.user?.email);
+        
+        try {
+          setSession(session);
           
-          // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto (com fallback)
-          let profileData = null;
-          try {
-            profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
-          } catch (err) {
-            console.warn('⚠️ Falha ao buscar user_profile, usando metadados', err);
+          if (session?.user) {
+            console.log('📝 Processando usuário do evento SIGNED_IN...');
+            
+            // Verificar se o usuário é admin baseado na lista de emails
+            const userIsAdmin = isAdminEmail(session.user.email);
+            setIsAdmin(userIsAdmin);
+            
+            // CRÍTICO: Definir currentUser IMEDIATAMENTE com dados básicos
+            // para garantir que nunca fique undefined
+            const basicUser: User = {
+              id: session.user.id,
+              cnpj: session.user.user_metadata?.cnpj || '',
+              name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
+              email: session.user.email || '',
+              role: userIsAdmin ? 'admin' : 'client',
+              clientId: session.user.user_metadata?.clientId || null
+            };
+            
+            console.log('🚀 Definindo currentUser básico imediatamente:', basicUser.email);
+            setCurrentUser(basicUser);
+            localStorage.setItem('extfireUser', JSON.stringify(basicUser));
+            
+            // Agora, tentar buscar dados adicionais do perfil em background (sem bloquear)
+            console.log('🔍 Buscando dados adicionais do perfil para:', session.user.email);
+            
+            // Promise.race para garantir que não demore mais de 2 segundos
+            Promise.race([
+              (async () => {
+                let profileData = null;
+                
+                try {
+                  const { data, error } = await supabase
+                    .from('user_profiles')
+                    .select('client_id, role, name, cnpj')
+                    .eq('id', session.user.id)
+                    .maybeSingle();
+                  
+                  if (!error && data) {
+                    console.log('✅ User_profile encontrado:', data);
+                    profileData = {
+                      clientId: data.client_id,
+                      role: data.role,
+                      name: data.name,
+                      cnpj: data.cnpj
+                    };
+                  }
+                } catch (err) {
+                  console.warn('⚠️ Falha ao buscar user_profile', err);
+                }
+                
+                // Se não conseguiu do user_profile, tentar da tabela clients
+                if (!profileData?.clientId && !userIsAdmin) {
+                  try {
+                    const { data: clientData } = await supabase
+                      .from('clients')
+                      .select('id, name, cnpj')
+                      .eq('email', session.user.email)
+                      .maybeSingle();
+                    
+                    if (clientData) {
+                      console.log('✅ Cliente encontrado:', clientData);
+                      profileData = {
+                        clientId: clientData.id,
+                        role: 'client',
+                        name: clientData.name,
+                        cnpj: clientData.cnpj
+                      };
+                    }
+                  } catch (err) {
+                    console.warn('⚠️ Falha ao buscar client', err);
+                  }
+                }
+                
+                return profileData;
+              })(),
+              new Promise((resolve) => setTimeout(() => resolve(null), 2000)) // Timeout de 2s
+            ]).then((profileData: any) => {
+              // Atualizar currentUser com dados do perfil se encontrou
+              if (profileData?.clientId) {
+                const updatedUser: User = {
+                  ...basicUser,
+                  cnpj: profileData.cnpj || basicUser.cnpj,
+                  name: profileData.name || basicUser.name,
+                  clientId: profileData.clientId
+                };
+                
+                console.log('✅ Atualizando currentUser com dados do perfil:', updatedUser.clientId);
+                setCurrentUser(updatedUser);
+                localStorage.setItem('extfireUser', JSON.stringify(updatedUser));
+              } else {
+                console.log('ℹ️ Usando dados básicos do usuário (sem perfil adicional)');
+              }
+            }).catch((err) => {
+              console.warn('⚠️ Erro ao buscar dados adicionais:', err);
+            });
+          } else {
+            console.log('❌ Sem sessão, limpando currentUser');
+            setCurrentUser(null);
+            setIsAdmin(false);
+            localStorage.removeItem('extfireUser');
           }
-          
-          // Map Supabase user to our User type
-          const user: User = {
-            id: session.user.id,
-            cnpj: profileData?.cnpj || session.user.user_metadata?.cnpj || '',
-            name: profileData?.name || session.user.user_metadata?.name || 'Usuário',
-            email: session.user.email || '',
-            role: userIsAdmin ? 'admin' : 'client',
-            // IMPORTANTE: Usar clientId do user_profile como fonte de verdade
-            clientId: profileData?.clientId || session.user.user_metadata?.clientId || null
-          };
-          
-          console.log('👤 Usuário autenticado:', {
-            email: user.email,
-            role: user.role,
-            clientId: user.clientId,
-            source: profileData ? 'user_profile' : 'metadata'
-          });
-          
-          setCurrentUser(user);
-          localStorage.setItem('extfireUser', JSON.stringify(user));
-          setIsLoading(false); // CRÍTICO: Definir loading como false após carregar usuário
-        } else {
-          setCurrentUser(null);
-          setIsAdmin(false);
-          localStorage.removeItem('extfireUser');
-          setIsLoading(false); // CRÍTICO: Definir loading como false mesmo sem usuário
+        } catch (error) {
+          console.error('❌ Erro no auth state change:', error);
         }
       }
     );
 
     // Check for existing session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      console.log('🔍 Verificando sessão existente...');
+      console.log('🔍 [getSession] Verificando sessão existente...', session?.user?.email);
       if (session?.user) {
+        console.log('📝 [getSession] Processando usuário da sessão existente...');
+        
         // Verificar se o usuário é admin baseado na lista de emails
         const userIsAdmin = isAdminEmail(session.user.email);
         setIsAdmin(userIsAdmin);
         
-        // CORREÇÃO: Buscar dados do user_profile para garantir clientId correto (com fallback)
-        let profileData = null;
-        try {
-          profileData = await syncUserDataFromProfile(session.user.id, session.user.email || '');
-        } catch (err) {
-          console.warn('⚠️ Falha ao buscar user_profile, usando metadados', err);
-        }
-        
-        const user: User = {
+        // CRÍTICO: Definir currentUser IMEDIATAMENTE com dados básicos
+        const basicUser: User = {
           id: session.user.id,
-          cnpj: profileData?.cnpj || session.user.user_metadata?.cnpj || '',
-          name: profileData?.name || session.user.user_metadata?.name || 'Usuário',
+          cnpj: session.user.user_metadata?.cnpj || '',
+          name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Usuário',
           email: session.user.email || '',
           role: userIsAdmin ? 'admin' : 'client',
-          // IMPORTANTE: Usar clientId do user_profile como fonte de verdade
-          clientId: profileData?.clientId || session.user.user_metadata?.clientId || null
+          clientId: session.user.user_metadata?.clientId || null
         };
         
-        console.log('👤 Sessão existente carregada:', {
-          email: user.email,
-          role: user.role,
-          clientId: user.clientId,
-          source: profileData ? 'user_profile' : 'metadata'
-        });
+        console.log('🚀 [getSession] Definindo currentUser básico:', basicUser.email);
+        setCurrentUser(basicUser);
+        localStorage.setItem('extfireUser', JSON.stringify(basicUser));
         
-        setCurrentUser(user);
-        localStorage.setItem('extfireUser', JSON.stringify(user));
+        console.log('✅ [getSession] CurrentUser básico definido!');
+        
+        // Buscar dados adicionais em background
+        console.log('🔍 [getSession] Buscando dados adicionais do perfil...');
+        
+        Promise.race([
+          (async () => {
+            let profileData = null;
+            
+            try {
+              const { data, error } = await supabase
+                .from('user_profiles')
+                .select('client_id, role, name, cnpj')
+                .eq('id', session.user.id)
+                .maybeSingle();
+              
+              if (!error && data) {
+                console.log('✅ [getSession] User_profile encontrado:', data);
+                profileData = {
+                  clientId: data.client_id,
+                  role: data.role,
+                  name: data.name,
+                  cnpj: data.cnpj
+                };
+              }
+            } catch (err) {
+              console.warn('⚠️ [getSession] Falha ao buscar user_profile', err);
+            }
+            
+            if (!profileData?.clientId && !userIsAdmin) {
+              try {
+                const { data: clientData } = await supabase
+                  .from('clients')
+                  .select('id, name, cnpj')
+                  .eq('email', session.user.email)
+                  .maybeSingle();
+                
+                if (clientData) {
+                  console.log('✅ [getSession] Cliente encontrado:', clientData);
+                  profileData = {
+                    clientId: clientData.id,
+                    role: 'client',
+                    name: clientData.name,
+                    cnpj: clientData.cnpj
+                  };
+                }
+              } catch (err) {
+                console.warn('⚠️ [getSession] Falha ao buscar client', err);
+              }
+            }
+            
+            return profileData;
+          })(),
+          new Promise((resolve) => setTimeout(() => resolve(null), 2000))
+        ]).then((profileData: any) => {
+          if (profileData?.clientId) {
+            const updatedUser: User = {
+              ...basicUser,
+              cnpj: profileData.cnpj || basicUser.cnpj,
+              name: profileData.name || basicUser.name,
+              clientId: profileData.clientId
+            };
+            
+            console.log('✅ [getSession] Atualizando com dados do perfil:', updatedUser.clientId);
+            setCurrentUser(updatedUser);
+            localStorage.setItem('extfireUser', JSON.stringify(updatedUser));
+          }
+        }).catch((err) => {
+          console.warn('⚠️ [getSession] Erro ao buscar dados adicionais:', err);
+        });
+      } else {
+        console.log('ℹ️ [getSession] Nenhuma sessão existente encontrada');
       }
       setIsLoading(false);
+      console.log('✅ [getSession] Finalizado, isLoading = false');
     }).catch((error) => {
-      console.error('❌ Erro ao verificar sessão:', error);
+      console.error('❌ [getSession] Erro ao verificar sessão:', error);
       setIsLoading(false);
+      console.log('✅ [getSession] Finalizado com erro, isLoading = false');
     });
 
     return () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // CRÍTICO: Garantir que isLoading seja sempre false após o carregamento inicial
+  // Este effect é a rede de segurança final para evitar loops infinitos
+  useEffect(() => {
+    // Após 3 segundos do mount, se ainda estiver loading, forçar false
+    const safetyTimeout = setTimeout(() => {
+      if (isLoading) {
+        console.warn('⚠️ SAFETY: Forçando isLoading = false após timeout');
+        setIsLoading(false);
+      }
+    }, 3000);
+
+    return () => clearTimeout(safetyTimeout);
+  }, []); // Executar apenas uma vez no mount
+
+  // CRÍTICO: Após processar currentUser, garantir que isLoading seja false
+  // IMPORTANTE: Só definir false quando currentUser estiver definido OU quando não houver sessão
+  useEffect(() => {
+    // Aguardar um pouco para dar tempo do onAuthStateChange processar
+    const checkTimeout = setTimeout(() => {
+      // Se não há sessão, o loading deve ser false (usuário não logado)
+      if (session === null && isLoading) {
+        console.log('✅ Sem sessão, definindo isLoading = false');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Se há sessão E currentUser já foi definido, pode definir loading como false
+      if (session !== null && currentUser !== null && isLoading) {
+        console.log('✅ Usuário processado, definindo isLoading = false');
+        setIsLoading(false);
+      }
+    }, 100); // Aguardar 100ms para dar tempo do onAuthStateChange processar
+
+    return () => clearTimeout(checkTimeout);
+  }, [session, currentUser, isLoading]); // Executar quando mudar
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
@@ -404,6 +570,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
         
+        // CRÍTICO: Definir currentUser para o atalho "admin"
+        if (data?.user) {
+          const user: User = {
+            id: data.user.id,
+            cnpj: '',
+            name: data.user.user_metadata?.name || 'Usuário Master',
+            email: 'gadielmachado.bm@gmail.com',
+            role: 'admin',
+            clientId: null
+          };
+          
+          setCurrentUser(user);
+          localStorage.setItem('extfireUser', JSON.stringify(user));
+        }
+        
         setIsAdmin(true);
         setIsLoading(false);
         return true;
@@ -448,6 +629,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
         
+        // CRÍTICO: Definir currentUser para o atalho "gadyel"
+        if (data?.user) {
+          const user: User = {
+            id: data.user.id,
+            cnpj: '',
+            name: data.user.user_metadata?.name || 'Gadiel (Admin)',
+            email: 'gadyel.bm@gmail.com',
+            role: 'admin',
+            clientId: null
+          };
+          
+          setCurrentUser(user);
+          localStorage.setItem('extfireUser', JSON.stringify(user));
+        }
+        
         setIsAdmin(true);
         setIsLoading(false);
         return true;
@@ -486,6 +682,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               toast.error("Não foi possível fazer login como admin: " + error.message);
               setIsLoading(false);
               return false;
+            }
+            
+            // CRÍTICO: Definir currentUser para o atalho "cristiano"
+            if (data?.user) {
+              const user: User = {
+                id: data.user.id,
+                cnpj: '',
+                name: data.user.user_metadata?.name || 'Cristiano (Admin)',
+                email: 'paoliellocristiano@gmail.com',
+                role: 'admin',
+                clientId: null
+              };
+              
+              setCurrentUser(user);
+              localStorage.setItem('extfireUser', JSON.stringify(user));
             }
             
             setIsAdmin(true);
@@ -529,11 +740,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           password: ADMIN_PASSWORD,
         });
         
-        // Se o login for bem-sucedido, retornar
-        if (!adminError) {
+        // Se o login for bem-sucedido, definir usuário antes de retornar
+        if (!adminError && adminData?.user) {
           console.log("Login admin bem-sucedido com a senha padrão");
           setIsAdmin(true);
+          
+          // CRÍTICO: Definir currentUser imediatamente para evitar undefined
+          const user: User = {
+            id: adminData.user.id,
+            cnpj: adminData.user.user_metadata?.cnpj || '',
+            name: adminData.user.user_metadata?.name || cleanEmail,
+            email: cleanEmail,
+            role: 'admin',
+            clientId: null // Admins não têm clientId
+          };
+          
+          setCurrentUser(user);
+          localStorage.setItem('extfireUser', JSON.stringify(user));
           setIsLoading(false);
+          
+          // Aguardar um pouco para garantir que o estado foi atualizado
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
           return true;
         }
         
@@ -775,6 +1003,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    console.log('🚪 Iniciando logout...');
+    setIsLoading(true); // Ativar loading durante logout
+    
     try {
       // Fazer logout local apenas (sem scope=global)
       const { error } = await supabase.auth.signOut();
@@ -785,9 +1016,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
     } finally {
+      // SEMPRE limpar estado local, mesmo se houver erro no signOut
       setCurrentUser(null);
       setIsAdmin(false);
+      setSession(null);
+      setIsLoading(false); // CRÍTICO: Desativar loading
       localStorage.removeItem('extfireUser');
+      console.log('✅ Logout completo, redirecionando para login...');
       navigate('/login');
     }
   };

@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { deleteUserByEmail, updateUserPassword, updateUserMetadata } from './supabaseAdmin';
 import { toast } from 'sonner';
 import { Client } from '@/types/client';
+import { AuthError } from '@supabase/supabase-js';
 
 /**
  * Deleta um cliente e suas credenciais de autenticação
@@ -133,7 +134,7 @@ export async function signUpOrUpdateUser(
     cnpj: string;
     clientId: string;
   }
-): Promise<{ success: boolean; operation: 'created' | 'updated' | 'failed' }> {
+): Promise<{ success: boolean; operation: 'created' | 'updated' | 'failed', error?: AuthError | null }> {
   try {
     console.log(`Tentando registrar/atualizar usuário com email: ${email}`);
     
@@ -193,7 +194,7 @@ export async function signUpOrUpdateUser(
         
         if (signUpError) {
           console.error(`Erro ao criar usuário admin ${email}:`, signUpError);
-          return { success: false, operation: 'failed' };
+          return { success: false, operation: 'failed', error: signUpError };
         }
         
         console.log(`Usuário admin ${email} criado com sucesso!`);
@@ -274,15 +275,15 @@ export async function signUpOrUpdateUser(
         return { success: true, operation: 'updated' };
       } else {
         console.error(`Erro ao atualizar usuário ${email}.`);
-        return { success: false, operation: 'failed' };
+        return { success: false, operation: 'failed', error: new AuthError('Falha ao atualizar metadados e senha do usuário') };
       }
     }
     
     // Qualquer outro erro
     console.error("Erro ao registrar usuário:", error);
-    return { success: false, operation: 'failed' };
+    return { success: false, operation: 'failed', error };
   } catch (error) {
     console.error("Erro geral no processo de registro/atualização:", error);
-    return { success: false, operation: 'failed' };
+    return { success: false, operation: 'failed', error: error as AuthError };
   }
 } 

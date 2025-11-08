@@ -35,6 +35,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentClientToEdit, setCurrentClientToEdit] = useState<Client | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const isLoadingClientsRef = useRef(false); // Flag para evitar carregamentos simultâneos
   const { isAdmin, currentUser, isLoading: authLoading } = useAuthContext?.() || { isAdmin: false, currentUser: null, isLoading: true };
   const previousUserIdRef = useRef<string | null>(null);
   const previousClientIdRef = useRef<string | null>(null);
@@ -171,7 +172,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Função para carregar clientes do Supabase
-  const loadClientsFromSupabase = async () => {
+  const loadClientsFromSupabase = async (user = currentUser) => {
     try {
       console.log("Carregando clientes do Supabase (fonte primária de dados)...");
       
@@ -214,18 +215,18 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           documentsError = error;
           console.log('📄 [ADMIN] Documentos retornados:', documentsData?.length || 0, documentsData);
           if (error) console.error('❌ [ADMIN] Erro ao buscar documentos:', error);
-        } else if (currentUser?.clientId) {
+        } else if (user?.clientId) {
           // Cliente só pode ver seus próprios documentos
           console.log('🔍 [CLIENTE] Buscando documentos do cliente:', {
-            clientId: currentUser.clientId,
-            email: currentUser.email,
+            clientId: user.clientId,
+            email: user.email,
             isAdmin: false
           });
           
           const { data, error } = await supabase
             .from('documents')
             .select('*')
-            .eq('client_id', currentUser.clientId);
+            .eq('client_id', user.clientId);
           
           documentsData = data;
           documentsError = error;
@@ -250,14 +251,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           } else {
             console.log('🔬 [DEBUG] Total de documentos no banco:', allDocs?.length || 0);
             console.log('🔬 [DEBUG] Documentos que pertencem a este cliente:', 
-              allDocs?.filter(d => d.client_id === currentUser.clientId) || []
+              allDocs?.filter(d => d.client_id === user.clientId) || []
             );
             console.log('🔬 [DEBUG] TODOS os documentos:', allDocs);
           }
-        } else if (currentUser?.email) {
+        } else if (user?.email) {
           // Tentar encontrar cliente pelo email
-          const clientByEmail = clientsData?.find(c => c.email?.toLowerCase() === currentUser.email.toLowerCase());
-          console.log('🔍 [EMAIL] Buscando cliente por email:', currentUser.email, 'Encontrado:', clientByEmail?.id);
+          const clientByEmail = clientsData?.find(c => c.email?.toLowerCase() === user.email.toLowerCase());
+          console.log('🔍 [EMAIL] Buscando cliente por email:', user.email, 'Encontrado:', clientByEmail?.id);
           
           if (clientByEmail) {
             const { data, error } = await supabase
@@ -359,7 +360,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  // Recarregar dados quando o usuário mudar (login/logout) OU quando clientId mudar
+  // Recarregar dados quando o usuário mudar (login/logout) OU quando clientId mudar SIGNIFICATIVAMENTE
   useEffect(() => {
     // Resetar initialized quando o usuário muda para forçar recarregamento
     // Usar refs para evitar loops infinitos
@@ -370,27 +371,67 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const currentUserKey = `${currentUserId}-${currentClientId}`;
     const previousUserKey = `${previousUserIdRef.current}-${previousClientIdRef.current}`;
     
-    if (previousUserKey !== currentUserKey) {
-      console.log("🔄 Usuário ou clientId mudou, recarregando dados...", {
+    // Verificar se é uma mudança significativa que requer recarregamento
+    const isSignificantChange = previousUserKey !== currentUserKey && (
+      // Mudança de userId (login/logout)
+      previousUserIdRef.current !== currentUserId ||
+      // Mudança de um clientId VÁLIDO para outro VÁLIDO diferente (não null -> válido)
+      (previousClientIdRef.current && currentClientId && previousClientIdRef.current !== currentClientId)
+    );
+    
+    if (isSignificantChange) {
+      console.log("🔄 Mudança significativa detectada, recarregando dados...", {
         anterior: { userId: previousUserIdRef.current, clientId: previousClientIdRef.current },
         atual: { userId: currentUserId, clientId: currentClientId }
       });
-      previousUserIdRef.current = currentUserId;
-      previousClientIdRef.current = currentClientId;
       setInitialized(false);
+      isLoadingClientsRef.current = false; // Liberar flag para permitir recarregamento
+    } else if (previousUserKey !== currentUserKey) {
+      console.log("ℹ️ ClientId atualizado (null -> válido), mantendo dados carregados:", {
+        anterior: { userId: previousUserIdRef.current, clientId: previousClientIdRef.current },
+        atual: { userId: currentUserId, clientId: currentClientId }
+      });
     }
-  }, [currentUser?.id, currentUser?.clientId, isAdmin]);
+    
+    // SEMPRE atualizar as refs para rastrear o estado atual
+    previousUserIdRef.current = currentUserId;
+    previousClientIdRef.current = currentClientId;
+  }, [currentUser, isAdmin]);
 
   // Load clients from Supabase on component mount ou quando inicializado for resetado
   useEffect(() => {
+    console.log("🔄 ClientContext useEffect disparado:", {
+      initialized,
+      authLoading,
+      isAdmin,
+      currentUserId: currentUser?.id,
+      currentUserEmail: currentUser?.email,
+      currentUserClientId: currentUser?.clientId,
+      isLoadingClients: isLoadingClientsRef.current
+    });
+    
     // CRÍTICO: NÃO carregar enquanto Auth ainda está carregando
     // Isso previne race condition onde documentos são buscados com clientId errado
-    if (initialized || authLoading) {
-      if (authLoading) {
-        console.log("⏳ Aguardando AuthContext terminar de carregar...");
-      }
+    if (initialized) {
+      console.log("⏭️ Já inicializado, ignorando");
       return;
     }
+    
+    if (authLoading) {
+      console.log("⏳ Aguardando AuthContext terminar de carregar...");
+      return;
+    }
+    
+    // Evitar múltiplas execuções simultâneas
+    if (isLoadingClientsRef.current) {
+      console.log("⏳ Já está carregando clientes, aguardando...");
+      return;
+    }
+    
+    console.log("✅ AuthContext pronto, iniciando carregamento...");
+    
+    // Marcar como carregando para evitar múltiplas execuções simultâneas
+    isLoadingClientsRef.current = true;
     
     // Carregar dados imediatamente após AuthContext estar pronto
     const loadClients = async () => {
@@ -398,7 +439,7 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       console.log("👤 Usuário atual:", currentUser?.email, "clientId:", currentUser?.clientId);
       
       // SEMPRE tentar carregar do Supabase primeiro (fonte primária de verdade)
-      const supabaseLoaded = await loadClientsFromSupabase();
+      const supabaseLoaded = await loadClientsFromSupabase(currentUser);
       
       // Se não conseguir carregar do Supabase (offline ou erro), usa o localStorage apenas como fallback temporário
       if (!supabaseLoaded) {
@@ -456,11 +497,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.log("✅ Dados carregados com sucesso do Supabase!");
       }
       
+      // CRÍTICO: Marcar como inicializado APÓS carregar os dados
       setInitialized(true);
+      isLoadingClientsRef.current = false;
+      console.log("✅ ClientContext inicializado com sucesso");
     };
     
     loadClients();
-  }, [isAdmin, initialized, authLoading]); // CRÍTICO: Agora também depende de authLoading
+  }, [isAdmin, initialized, authLoading, currentUser]); // CRÍTICO: Agora também depende de authLoading
 
   const initializeWithExampleClients = () => {
     const exampleClient: Client = {
@@ -565,7 +609,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Isso garante que o cliente exista no banco antes de aparecer na interface
     let syncSuccess = false;
     try {
-      syncSuccess = await syncClientWithSupabase(newClient);
+      // Passar o cliente dentro de um array para o syncClientsWithSupabase
+      syncSuccess = await syncClientsWithSupabase([newClient]);
       if (!syncSuccess) {
         console.error("Falha ao sincronizar cliente com Supabase. Não será adicionado localmente.");
         toast.error(`Erro ao adicionar cliente ${client.name}. Verifique sua conexão e tente novamente.`);
@@ -653,10 +698,15 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
         } else {
           console.error(`Erro ao ${result.operation === 'created' ? 'criar' : 'atualizar'} credenciais para o cliente ${newClient.name}`);
+          // Se a criação do usuário falhar (ex: email já existe), mostrar erro específico
+          if (result.error) {
+            toast.error(`Erro ao criar usuário: ${result.error.message}`);
+          }
         }
       } catch (authError) {
         console.error(`Erro ao gerenciar autenticação para o cliente ${newClient.name}:`, authError);
         // Não bloqueia a adição do cliente se só a autenticação falhar
+        toast.error(`Erro inesperado ao criar usuário. Tente novamente.`);
       }
     }
     
@@ -858,21 +908,6 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Função para "excluir" um cliente e suas credenciais de autenticação
   const deleteClient = async (clientId: string) => {
-    // Validar clientId antes de prosseguir
-    if (!clientId || clientId.trim() === '') {
-      console.error('❌ ClientId inválido ou vazio:', clientId);
-      toast.error('Erro: ID do cliente inválido');
-      return;
-    }
-    
-    // Validar formato UUID
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(clientId)) {
-      console.error('❌ ClientId não é um UUID válido:', clientId);
-      toast.error('Erro: Formato de ID inválido');
-      return;
-    }
-    
     // Apenas admins podem excluir clientes
     if (!isAdmin) {
       console.error("Tentativa de excluir cliente sem permissões administrativas");
@@ -880,125 +915,67 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
+    // Encontrar o cliente que será excluído
+    const clientToDelete = clients.find(client => client.id === clientId);
+    
+    if (!clientToDelete) {
+      console.error('Cliente não encontrado para exclusão');
+      toast.error('Erro ao excluir cliente: Cliente não encontrado');
+      return;
+    }
+    
+    console.log(`Iniciando exclusão do cliente: ${clientToDelete.name} (ID: ${clientToDelete.id})`);
+    
+    // NOTA: A exclusão do usuário de autenticação (auth.users) deve ser feita
+    // através de uma função de borda (Edge Function) por razões de segurança,
+    // pois requer a service_role_key.
+    // O código abaixo assume que a exclusão na tabela 'clients' é suficiente
+    // para remover o acesso do cliente ao sistema.
+    
     try {
-      // Encontrar o cliente que será excluído
-      const clientToDelete = clients.find(client => client.id === clientId);
-      
-      if (!clientToDelete) {
-        console.error('Cliente não encontrado para exclusão');
-        toast.error('Erro ao excluir cliente: Cliente não encontrado');
+      // Remover da tabela 'clients' no Supabase
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', clientId);
+
+      if (error) {
+        console.error("Erro ao excluir cliente do Supabase:", error);
+        toast.error(`Erro ao excluir cliente ${clientToDelete.name} do banco de dados.`);
         return;
       }
-      
-      console.log(`Iniciando exclusão do cliente: ${clientToDelete.name} (ID: ${clientToDelete.id})`);
-      
-      // Verificar se tem email associado e registrar para debugging
+
+      console.log(`Cliente ${clientToDelete.id} removido com sucesso da tabela clients.`);
+
+      // Limpar o client_id do user_profile para evitar referências órfãs
       if (clientToDelete.email) {
-        console.log(`O cliente a ser excluído possui email associado: ${clientToDelete.email}`);
-      } else {
-        console.log(`O cliente a ser excluído NÃO possui email associado.`);
-      }
-      
-      // Verificar se o cliente a ser excluído tem o mesmo email que o administrador atual
-      // Se for o caso, NÃO deletamos as credenciais de autenticação
-      const isAdminOwnEmail = isAdmin && currentUser?.email && 
-                              clientToDelete.email === currentUser.email;
-      
-      // NOTA: Não é possível excluir credenciais de autenticação do frontend
-      // por questões de segurança (requer SERVICE_ROLE_KEY).
-      // As credenciais permanecerão no Supabase Auth, mas o cliente será
-      // removido da tabela clients, o que é suficiente para o sistema.
-      
-      if (isAdminOwnEmail) {
-        console.log(`O cliente a ser excluído tem o mesmo email do administrador atual. Preservando credenciais.`);
-      } else if (clientToDelete.email) {
-        console.log(`Cliente possui email associado: ${clientToDelete.email}`);
-        console.log(`⚠️ Nota: As credenciais de autenticação não serão excluídas (requer backend).`);
-        console.log(`O usuário não poderá mais acessar o sistema pois o cliente foi removido da tabela.`);
-      }
-      
-      // Também remover do Supabase se for admin
-      if (isAdmin) {
-        try {
-          console.log(`🔍 DEBUG - Removendo cliente:`, {
-            clientId: clientId,
-            clientToDeleteId: clientToDelete.id,
-            tipoClientId: typeof clientId,
-            valorClientId: clientId,
-            clientIdLength: clientId?.length
-          });
+        const { error: profileError } = await supabase
+          .from('user_profiles')
+          .update({ client_id: null, updated_at: new Date().toISOString() })
+          .eq('client_id', clientId);
           
-          console.log(`Removendo cliente ${clientToDelete.id} da tabela clients no Supabase...`);
-          const { error } = await supabase
-            .from('clients')
-            .delete()
-            .eq('id', clientId);
-            
-          if (error) {
-            console.error("Erro ao excluir cliente do Supabase:", error);
-            console.error("🔍 DEBUG - Detalhes do erro:", {
-              code: error.code,
-              message: error.message,
-              details: error.details,
-              hint: error.hint
-            });
-          } else {
-            console.log(`Cliente ${clientToDelete.id} removido com sucesso da tabela clients.`);
-            
-            // CRÍTICO: Limpar client_id do user_profile para evitar referências órfãs
-            if (clientToDelete.email && !isAdminOwnEmail) {
-              try {
-                console.log(`Limpando client_id do user_profile para ${clientToDelete.email}...`);
-                
-                const { error: profileError } = await supabase
-                  .from('user_profiles')
-                  .update({
-                    client_id: null,
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('email', clientToDelete.email);
-                
-                if (profileError) {
-                  console.warn(`Aviso ao limpar user_profile:`, profileError);
-                } else {
-                  console.log(`✅ Client_id removido do user_profile para ${clientToDelete.email}`);
-                }
-              } catch (profileError) {
-                console.warn(`Aviso ao limpar user_profile:`, profileError);
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Erro ao excluir cliente do Supabase:", err);
+        if (profileError) {
+          console.warn(`Aviso ao limpar user_profile:`, profileError);
+        } else {
+          console.log(`✅ Client_id removido do user_profile para ${clientToDelete.email}`);
         }
       }
-      
+
       // Remover o cliente da lista local
       const updatedClients = clients.filter(c => c.id !== clientId);
       setClients(updatedClients);
-      
-      // Definir o cliente atual como null para garantir que desapareça do dashboard
+      saveClientsToStorage(updatedClients);
+
+      // Limpar cliente atual se ele foi o excluído
       if (currentClient && currentClient.id === clientId) {
         setCurrentClient(null);
-        // Opcionalmente, selecionar outro cliente automaticamente se disponível
-        // const activeClients = updatedClients.filter(c => !c.isBlocked);
-        // if (activeClients.length > 0) setCurrentClient(activeClients[0]);
       }
-      
-      // Atualizar o localStorage
-      saveClientsToStorage(updatedClients);
-      
-      // Exibir mensagem de sucesso
+
       toast.success(`Cliente ${clientToDelete.name} excluído com sucesso`);
       
-      // Informar sobre as credenciais se houver email
-      if (clientToDelete.email && !isAdminOwnEmail) {
-        console.log(`ℹ️ As credenciais de ${clientToDelete.email} foram mantidas no sistema de autenticação.`);
-        console.log(`ℹ️ O usuário não poderá mais acessar pois o cliente foi removido.`);
-      }
-    } catch (error) {
-      console.error('Erro ao excluir cliente:', error);
-      toast.error('Erro ao excluir cliente. Tente novamente mais tarde.');
+    } catch (err) {
+      console.error("Erro durante o processo de exclusão do cliente:", err);
+      toast.error('Ocorreu um erro inesperado ao excluir o cliente.');
     }
   };
 
