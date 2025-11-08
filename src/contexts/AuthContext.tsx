@@ -84,63 +84,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Função auxiliar para buscar e sincronizar dados do user_profile
   const syncUserDataFromProfile = async (userId: string, userEmail: string) => {
-    try {
-      console.log(`🔍 Buscando user_profile para: ${userEmail}`);
-      
-      // Timeout aumentado para 5 segundos e com melhor tratamento
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 5000)
-      );
-      
-      // Query otimizada com .maybeSingle() ao invés de .single() para evitar erro se não existir
-      const queryPromise = supabase
-        .from('user_profiles')
-        .select('client_id, role, name, cnpj')
-        .eq('id', userId)
-        .maybeSingle(); // Mudança para maybeSingle para evitar erro quando não existe
-      
-      // Buscar dados do user_profile com timeout
-      const result = await Promise.race([
-        queryPromise,
-        timeoutPromise
-      ]).catch(err => {
-        // Se for timeout, retornar erro específico
-        if (err.message === 'Timeout') {
-          console.warn('⚠️ Timeout ao buscar user_profile após 5s');
-          return { data: null, error: { message: 'Timeout' } };
+    // Timeout geral de 3 segundos para toda a função
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => {
+        console.warn(`⏱️ Timeout geral de 3s atingido para ${userEmail}`);
+        resolve(null);
+      }, 3000);
+    });
+    
+    const fetchPromise = async (): Promise<any> => {
+      try {
+        console.log(`🔍 Buscando user_profile para: ${userEmail}`);
+        
+        // Tentativa 1: Buscar do user_profile (rápido, 1 tentativa)
+        try {
+          const { data, error } = await supabase
+            .from('user_profiles')
+            .select('client_id, role, name, cnpj')
+            .eq('id', userId)
+            .maybeSingle();
+          
+          if (!error && data) {
+            console.log(`✅ User_profile encontrado:`, {
+              clientId: data.client_id,
+              role: data.role
+            });
+            
+            return {
+              clientId: data.client_id,
+              role: data.role,
+              name: data.name,
+              cnpj: data.cnpj
+            };
+          }
+          
+          if (error) {
+            console.warn(`⚠️ Erro ao buscar user_profile:`, error.message);
+          }
+        } catch (err: any) {
+          console.warn(`⚠️ Exceção ao buscar user_profile:`, err.message);
         }
-        throw err;
-      }) as any;
-      
-      const { data: profileData, error: profileError } = result;
-      
-      if (profileError) {
-        // Só logar como warning se não for "not found"
-        if (profileError.message !== 'Timeout' && !profileError.message?.includes('not found')) {
-          console.warn('⚠️ Não foi possível buscar user_profile:', profileError.message || profileError);
+        
+        // Tentativa 2: Se user_profile falhou, buscar direto da tabela clients
+        console.log(`🔄 Buscando client_id direto da tabela clients para: ${userEmail}`);
+        
+        try {
+          const { data: clientData, error: clientError } = await supabase
+            .from('clients')
+            .select('id, name, cnpj')
+            .eq('email', userEmail)
+            .maybeSingle();
+          
+          if (!clientError && clientData) {
+            console.log(`✅ Cliente encontrado na tabela clients:`, {
+              clientId: clientData.id,
+              name: clientData.name
+            });
+            
+            return {
+              clientId: clientData.id,
+              role: 'client',
+              name: clientData.name,
+              cnpj: clientData.cnpj
+            };
+          }
+          
+          if (clientError) {
+            console.warn('⚠️ Erro ao buscar da tabela clients:', clientError.message);
+          }
+        } catch (err: any) {
+          console.warn('⚠️ Exceção ao buscar da tabela clients:', err.message);
         }
+        
+        // Se nada funcionou, retornar null
+        console.warn(`⚠️ Não foi possível obter dados do perfil para ${userEmail}`);
+        return null;
+      } catch (error: any) {
+        console.error('❌ Erro crítico ao buscar dados do perfil:', error?.message || error);
         return null;
       }
-      
-      if (profileData) {
-        console.log(`✅ Dados do user_profile carregados:`, {
-          clientId: profileData.client_id,
-          role: profileData.role,
-          name: profileData.name
-        });
-        
-        return {
-          clientId: profileData.client_id,
-          role: profileData.role,
-          name: profileData.name,
-          cnpj: profileData.cnpj
-        };
-      }
-      
-      // Se não houver dados, retornar null silenciosamente (não é erro)
-      return null;
+    };
+    
+    // Usar Promise.race para garantir que não trave
+    try {
+      const result = await Promise.race([fetchPromise(), timeoutPromise]);
+      return result;
     } catch (error: any) {
-      console.warn('⚠️ Erro inesperado ao buscar user_profile:', error?.message || error);
+      console.error('❌ Erro no Promise.race:', error?.message || error);
       return null;
     }
   };

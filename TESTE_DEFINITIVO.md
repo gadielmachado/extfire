@@ -71,3 +71,5 @@ LIMIT 1;
 
 Com essas informações vou identificar EXATAMENTE onde está o problema!
 
+
+
