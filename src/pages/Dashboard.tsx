@@ -21,7 +21,8 @@ const Dashboard: React.FC = () => {
     clients,
     blockClient,
     unblockClient,
-    refreshClientsFromSupabase
+    refreshClientsFromSupabase,
+    currentFolderId
   } = useClientContext();
   
   const { isAdmin, currentUser } = useAuthContext();
@@ -175,6 +176,7 @@ const Dashboard: React.FC = () => {
       <UploadDocumentDialog 
         isOpen={isUploadOpen} 
         onClose={() => setIsUploadOpen(false)}
+        currentFolderId={currentFolderId}
       />
     </div>
   );

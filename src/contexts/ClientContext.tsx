@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Client } from '@/types/client';
 import { Document } from '@/types/document';
+import { Folder } from '@/types/folder';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthContext } from './AuthContext';
@@ -10,6 +11,8 @@ interface ClientContextType {
   currentClient: Client | null;
   currentClientToEdit: Client | null;
   editDialogOpen: boolean;
+  folders: Folder[];
+  currentFolderId: string | null;
   setCurrentClient: (client: Client | null) => void;
   addClient: (client: Omit<Client, 'id' | 'documents' | 'isBlocked'>) => Promise<void>;
   updateClient: (client: Client) => Promise<void>;
@@ -23,6 +26,13 @@ interface ClientContextType {
   getActiveClients: () => Client[];
   hasAccessToClient: (clientId: string) => boolean;
   refreshClientsFromSupabase: () => Promise<boolean>;
+  setCurrentFolderId: (folderId: string | null) => void;
+  createFolder: (clientId: string, folderName: string, parentFolderId?: string | null) => Promise<void>;
+  renameFolder: (folderId: string, newName: string) => Promise<void>;
+  deleteFolder: (folderId: string, deleteContents: boolean) => Promise<void>;
+  getFolderContents: (clientId: string, folderId: string | null) => { folders: Folder[], documents: Document[] };
+  moveFolderOrDocument: (itemId: string, targetFolderId: string | null, isFolder: boolean) => Promise<void>;
+  getFolderPath: (folderId: string | null) => Folder[];
 }
 
 const ClientContext = createContext<ClientContextType>({} as ClientContextType);
@@ -34,6 +44,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentClient, setCurrentClient] = useState<Client | null>(null);
   const [currentClientToEdit, setCurrentClientToEdit] = useState<Client | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const isLoadingClientsRef = useRef(false); // Flag para evitar carregamentos simultâneos
   const { isAdmin, currentUser, isLoading: authLoading } = useAuthContext?.() || { isAdmin: false, currentUser: null, isLoading: true };
@@ -74,7 +86,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         type: doc.type,
         size: doc.size,
         fileUrl: doc.file_url,
-        uploadDate: new Date(doc.upload_date)
+        uploadDate: new Date(doc.upload_date),
+        folderId: doc.folder_id
       }));
       
       // Atualizar estado local
@@ -103,6 +116,46 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch (error) {
       console.error("Erro ao recarregar documentos:", error);
       return false;
+    }
+  };
+
+  // Função para carregar pastas de um cliente específico
+  const loadFoldersFromSupabase = async (clientId?: string): Promise<Folder[]> => {
+    try {
+      console.log(`📁 Carregando pastas${clientId ? ` do cliente ${clientId}` : ''}...`);
+      
+      let query = supabase.from('folders').select('*');
+      
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      } else if (!isAdmin && currentUser?.clientId) {
+        // Se não for admin, carregar apenas pastas do seu cliente
+        query = query.eq('client_id', currentUser.clientId);
+      }
+      
+      const { data: foldersData, error: foldersError } = await query;
+      
+      if (foldersError) {
+        console.error("Erro ao carregar pastas do Supabase:", foldersError);
+        return [];
+      }
+      
+      console.log(`✅ ${foldersData?.length || 0} pasta(s) carregada(s)`);
+      
+      // Mapear pastas para o formato correto
+      const foldersFromSupabase = (foldersData || []).map((folder: any) => ({
+        id: folder.id,
+        clientId: folder.client_id,
+        name: folder.name,
+        parentFolderId: folder.parent_folder_id,
+        createdAt: new Date(folder.created_at),
+        updatedAt: new Date(folder.updated_at)
+      }));
+      
+      return foldersFromSupabase;
+    } catch (error) {
+      console.error("Erro ao carregar pastas:", error);
+      return [];
     }
   };
 
@@ -315,7 +368,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             type: doc.type,
             size: doc.size,
             fileUrl: doc.file_url,
-            uploadDate: new Date(doc.upload_date)
+            uploadDate: new Date(doc.upload_date),
+            folderId: doc.folder_id
           });
         });
       }
@@ -334,6 +388,10 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         userEmail: client.user_email || client.email
       }));
 
+      // Carregar pastas também
+      const loadedFolders = await loadFoldersFromSupabase();
+      setFolders(loadedFolders);
+      
       // CRÍTICO: Sempre atualizar estado e localStorage com dados do Supabase
       // Isso garante que localStorage seja sobrescrito com dados atualizados
       setClients(processedClients);
@@ -1018,7 +1076,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           type: document.type,
           size: document.size,
           file_url: document.fileUrl,
-          upload_date: document.uploadDate.toISOString()
+          upload_date: document.uploadDate.toISOString(),
+          folder_id: document.folderId // Correção: usar 'folder_id' com underscore
         })
         .select()
         .single();
@@ -1043,15 +1102,40 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       console.log("✅ Documento salvo no Supabase:", insertedDoc);
 
-      // CRÍTICO: Forçar recarregamento COMPLETO do Supabase para garantir consistência
-      console.log("🔄 Forçando recarregamento completo dos dados do Supabase...");
-      
-      // Recarregar os documentos do cliente
-      const reloadSuccess = await reloadClientDocuments(effectiveClientId);
-      
-      if (!reloadSuccess) {
-        console.warn("⚠️ Falha ao recarregar documentos, tentando reload completo...");
-        await loadClientsFromSupabase();
+      // CORREÇÃO: Atualizar o estado localmente em vez de recarregar tudo
+      // Isso evita race conditions e garante que o folderId correto seja exibido
+      const newDocumentFromDB: Document = {
+        id: insertedDoc.id,
+        name: insertedDoc.name,
+        type: insertedDoc.type,
+        size: insertedDoc.size,
+        fileUrl: insertedDoc.file_url,
+        uploadDate: new Date(insertedDoc.upload_date),
+        folderId: insertedDoc.folder_id
+      };
+
+      setClients(prevClients => {
+        const updatedClients = prevClients.map(client => {
+          if (client.id === effectiveClientId) {
+            // Adicionar o novo documento à lista do cliente
+            return {
+              ...client,
+              documents: [...client.documents, newDocumentFromDB]
+            };
+          }
+          return client;
+        });
+        // Salvar no cache local também
+        saveClientsToStorage(updatedClients);
+        return updatedClients;
+      });
+
+      // Atualizar o cliente atual se for o mesmo que foi modificado
+      if (currentClient && currentClient.id === effectiveClientId) {
+        setCurrentClient(prev => prev ? ({ 
+          ...prev, 
+          documents: [...prev.documents, newDocumentFromDB] 
+        }) : null);
       }
       
       toast.success(`Documento '${document.name}' adicionado com sucesso!`);
@@ -1149,6 +1233,362 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return success;
   };
 
+  // ====================================================
+  // FUNÇÕES DE GERENCIAMENTO DE PASTAS
+  // ====================================================
+
+  // Função para criar uma nova pasta
+  const createFolder = async (clientId: string, folderName: string, parentFolderId?: string | null) => {
+    if (!isAdmin) {
+      toast.error("Apenas administradores podem criar pastas");
+      return;
+    }
+
+    // Validar nome da pasta
+    if (!folderName || folderName.trim() === '') {
+      toast.error("Nome da pasta não pode ser vazio");
+      return;
+    }
+
+    // Verificar nomes duplicados no mesmo nível
+    const existingFolder = folders.find(f => 
+      f.clientId === clientId && 
+      f.parentFolderId === (parentFolderId || null) && 
+      f.name.toLowerCase() === folderName.trim().toLowerCase()
+    );
+
+    if (existingFolder) {
+      toast.error("Já existe uma pasta com este nome neste local");
+      return;
+    }
+
+    try {
+      const newFolder = {
+        id: crypto.randomUUID(),
+        client_id: clientId,
+        name: folderName.trim(),
+        parent_folder_id: parentFolderId || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('folders')
+        .insert(newFolder)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Erro ao criar pasta:", error);
+        
+        // Verificar se é erro de profundidade
+        if (error.message && error.message.includes('Profundidade máxima')) {
+          toast.error("Profundidade máxima de pastas atingida (máximo: 5 níveis)");
+        } else {
+          toast.error("Erro ao criar pasta");
+        }
+        return;
+      }
+
+      // Atualizar estado local
+      const folderMapped: Folder = {
+        id: data.id,
+        clientId: data.client_id,
+        name: data.name,
+        parentFolderId: data.parent_folder_id,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at)
+      };
+
+      setFolders([...folders, folderMapped]);
+      toast.success(`Pasta "${folderName}" criada com sucesso`);
+    } catch (error) {
+      console.error("Erro ao criar pasta:", error);
+      toast.error("Erro ao criar pasta");
+    }
+  };
+
+  // Função para renomear uma pasta
+  const renameFolder = async (folderId: string, newName: string) => {
+    if (!isAdmin) {
+      toast.error("Apenas administradores podem renomear pastas");
+      return;
+    }
+
+    if (!newName || newName.trim() === '') {
+      toast.error("Nome da pasta não pode ser vazio");
+      return;
+    }
+
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) {
+      toast.error("Pasta não encontrada");
+      return;
+    }
+
+    // Verificar nomes duplicados no mesmo nível
+    const existingFolder = folders.find(f => 
+      f.id !== folderId &&
+      f.clientId === folder.clientId && 
+      f.parentFolderId === folder.parentFolderId && 
+      f.name.toLowerCase() === newName.trim().toLowerCase()
+    );
+
+    if (existingFolder) {
+      toast.error("Já existe uma pasta com este nome neste local");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('folders')
+        .update({ name: newName.trim(), updated_at: new Date().toISOString() })
+        .eq('id', folderId);
+
+      if (error) {
+        console.error("Erro ao renomear pasta:", error);
+        toast.error("Erro ao renomear pasta");
+        return;
+      }
+
+      // Atualizar estado local
+      setFolders(folders.map(f => 
+        f.id === folderId ? { ...f, name: newName.trim(), updatedAt: new Date() } : f
+      ));
+
+      toast.success("Pasta renomeada com sucesso");
+    } catch (error) {
+      console.error("Erro ao renomear pasta:", error);
+      toast.error("Erro ao renomear pasta");
+    }
+  };
+
+  // Função para deletar uma pasta
+  const deleteFolder = async (folderId: string, deleteContents: boolean) => {
+    if (!isAdmin) {
+      toast.error("Apenas administradores podem deletar pastas");
+      return;
+    }
+
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) {
+      toast.error("Pasta não encontrada");
+      return;
+    }
+
+    try {
+      if (deleteContents) {
+        // Deletar tudo em cascata (o banco já faz isso via ON DELETE CASCADE)
+        const { error } = await supabase
+          .from('folders')
+          .delete()
+          .eq('id', folderId);
+
+        if (error) {
+          console.error("Erro ao deletar pasta:", error);
+          toast.error("Erro ao deletar pasta");
+          return;
+        }
+
+        // Atualizar estado local: remover pasta e suas subpastas
+        const foldersToRemove = new Set<string>();
+        const findDescendants = (parentId: string) => {
+          foldersToRemove.add(parentId);
+          folders.filter(f => f.parentFolderId === parentId).forEach(f => findDescendants(f.id));
+        };
+        findDescendants(folderId);
+
+        setFolders(folders.filter(f => !foldersToRemove.has(f.id)));
+
+        // Remover documentos da pasta deletada
+        const client = clients.find(c => c.id === folder.clientId);
+        if (client) {
+          const updatedDocuments = client.documents.filter(d => d.folderId !== folderId);
+          const updatedClient = { ...client, documents: updatedDocuments };
+          setClients(clients.map(c => c.id === client.id ? updatedClient : c));
+        }
+
+        toast.success("Pasta e conteúdo deletados com sucesso");
+      } else {
+        // Mover conteúdo para a raiz antes de deletar
+        // 1. Mover subpastas para o pai da pasta deletada
+        const { error: moveFoldersError } = await supabase
+          .from('folders')
+          .update({ parent_folder_id: folder.parentFolderId })
+          .eq('parent_folder_id', folderId);
+
+        if (moveFoldersError) {
+          console.error("Erro ao mover subpastas:", moveFoldersError);
+          toast.error("Erro ao mover subpastas");
+          return;
+        }
+
+        // 2. Mover documentos para a raiz
+        const { error: moveDocsError } = await supabase
+          .from('documents')
+          .update({ folder_id: folder.parentFolderId })
+          .eq('folder_id', folderId);
+
+        if (moveDocsError) {
+          console.error("Erro ao mover documentos:", moveDocsError);
+          toast.error("Erro ao mover documentos");
+          return;
+        }
+
+        // 3. Deletar a pasta vazia
+        const { error: deleteFolderError } = await supabase
+          .from('folders')
+          .delete()
+          .eq('id', folderId);
+
+        if (deleteFolderError) {
+          console.error("Erro ao deletar pasta:", deleteFolderError);
+          toast.error("Erro ao deletar pasta");
+          return;
+        }
+
+        // Atualizar estado local
+        setFolders(folders.filter(f => f.id !== folderId).map(f => 
+          f.parentFolderId === folderId ? { ...f, parentFolderId: folder.parentFolderId } : f
+        ));
+
+        // Recarregar documentos do cliente
+        await reloadClientDocuments(folder.clientId);
+
+        toast.success("Pasta deletada e conteúdo movido para a raiz");
+      }
+
+      // Se a pasta atual foi deletada, voltar para a raiz
+      if (currentFolderId === folderId) {
+        setCurrentFolderId(null);
+      }
+    } catch (error) {
+      console.error("Erro ao deletar pasta:", error);
+      toast.error("Erro ao deletar pasta");
+    }
+  };
+
+  // Função para obter conteúdo de uma pasta (subpastas e documentos)
+  const getFolderContents = (clientId: string, folderId: string | null): { folders: Folder[], documents: Document[] } => {
+    const client = clients.find(c => c.id === clientId);
+    if (!client) {
+      return { folders: [], documents: [] };
+    }
+
+    // Filtrar pastas do nível atual
+    const foldersList = folders.filter(f => 
+      f.clientId === clientId && f.parentFolderId === folderId
+    );
+
+    // Filtrar documentos do nível atual
+    const documentsList = client.documents.filter(d => 
+      (folderId === null && !d.folderId) || d.folderId === folderId
+    );
+
+    return { folders: foldersList, documents: documentsList };
+  };
+
+  // Função para mover pasta ou documento
+  const moveFolderOrDocument = async (itemId: string, targetFolderId: string | null, isFolder: boolean) => {
+    if (!isAdmin) {
+      toast.error("Apenas administradores podem mover itens");
+      return;
+    }
+
+    try {
+      if (isFolder) {
+        // Verificar se não está tentando mover para dentro de si mesma
+        if (itemId === targetFolderId) {
+          toast.error("Não é possível mover uma pasta para dentro de si mesma");
+          return;
+        }
+
+        // Verificar se targetFolderId não é descendente de itemId
+        let currentParent = targetFolderId;
+        while (currentParent) {
+          if (currentParent === itemId) {
+            toast.error("Não é possível mover uma pasta para dentro de suas subpastas");
+            return;
+          }
+          const parentFolder = folders.find(f => f.id === currentParent);
+          currentParent = parentFolder?.parentFolderId || null;
+        }
+
+        const { error } = await supabase
+          .from('folders')
+          .update({ parent_folder_id: targetFolderId })
+          .eq('id', itemId);
+
+        if (error) {
+          console.error("Erro ao mover pasta:", error);
+          
+          if (error.message && error.message.includes('Profundidade máxima')) {
+            toast.error("Operação resultaria em profundidade máxima excedida");
+          } else {
+            toast.error("Erro ao mover pasta");
+          }
+          return;
+        }
+
+        // Atualizar estado local
+        setFolders(folders.map(f => 
+          f.id === itemId ? { ...f, parentFolderId: targetFolderId } : f
+        ));
+
+        toast.success("Pasta movida com sucesso");
+      } else {
+        // Mover documento
+        const { error } = await supabase
+          .from('documents')
+          .update({ folder_id: targetFolderId })
+          .eq('id', itemId);
+
+        if (error) {
+          console.error("Erro ao mover documento:", error);
+          toast.error("Erro ao mover documento");
+          return;
+        }
+
+        // Atualizar estado local
+        const document = clients.flatMap(c => c.documents).find(d => d.id === itemId);
+        if (document) {
+          await reloadClientDocuments(document.folderId || '');
+        }
+
+        toast.success("Documento movido com sucesso");
+      }
+    } catch (error) {
+      console.error("Erro ao mover item:", error);
+      toast.error("Erro ao mover item");
+    }
+  };
+
+  // Função para obter caminho completo de uma pasta (breadcrumb)
+  const getFolderPath = (folderId: string | null): Folder[] => {
+    if (!folderId) return [];
+
+    const path: Folder[] = [];
+    let currentId: string | null = folderId;
+    let iterations = 0;
+    const maxIterations = 10;
+
+    while (currentId && iterations < maxIterations) {
+      const folder = folders.find(f => f.id === currentId);
+      if (!folder) break;
+
+      path.unshift(folder);
+      currentId = folder.parentFolderId;
+      iterations++;
+    }
+
+    return path;
+  };
+
+  // Resetar currentFolderId quando mudar de cliente
+  useEffect(() => {
+    setCurrentFolderId(null);
+  }, [currentClient?.id]);
+
   return (
     <ClientContext.Provider 
       value={{ 
@@ -1156,6 +1596,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         currentClient, 
         currentClientToEdit,
         editDialogOpen,
+        folders,
+        currentFolderId,
         setCurrentClient: setCurrentClientWithPermissionCheck,
         addClient, 
         updateClient, 
@@ -1168,7 +1610,14 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         removeDocument,
         getActiveClients,
         hasAccessToClient,
-        refreshClientsFromSupabase
+        refreshClientsFromSupabase,
+        setCurrentFolderId,
+        createFolder,
+        renameFolder,
+        deleteFolder,
+        getFolderContents,
+        moveFolderOrDocument,
+        getFolderPath
       }}
     >
       {children}

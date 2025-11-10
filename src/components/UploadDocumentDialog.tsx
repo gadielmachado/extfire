@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Upload } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Upload, Folder } from 'lucide-react';
 import { toast } from 'sonner';
 import { useClientContext } from '@/contexts/ClientContext';
 import { Document } from '@/types/document';
@@ -12,13 +13,25 @@ import { uploadFileToStorage } from '@/lib/utils';
 interface UploadDocumentDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  currentFolderId?: string | null;
 }
 
-const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onClose }) => {
+const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onClose, currentFolderId = null }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const { currentClient, addDocument } = useClientContext();
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(currentFolderId);
+  const { currentClient, addDocument, folders, getFolderPath } = useClientContext();
+
+  // Filtrar pastas do cliente atual
+  const clientFolders = folders.filter(f => currentClient && f.clientId === currentClient.id);
+
+  // Resetar pasta selecionada quando o dialog abre
+  React.useEffect(() => {
+    if (isOpen) {
+      setSelectedFolderId(currentFolderId);
+    }
+  }, [isOpen, currentFolderId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -104,14 +117,15 @@ const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onC
         return;
       }
       
-      // Criar documento com URL do arquivo
+      // Criar documento com URL do arquivo e pasta selecionada
       const newDocument: Document = {
         id: crypto.randomUUID(),
         name: file.name,
         type: getFileType(file.name),
         size: formatFileSize(file.size),
         uploadDate: new Date(),
-        fileUrl: fileUrl
+        fileUrl: fileUrl,
+        folderId: selectedFolderId
       };
       
       console.log('💾 Salvando documento no banco com ID VALIDADO:', {
@@ -126,6 +140,7 @@ const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onC
       
       toast.success('Documento enviado com sucesso!');
       setFile(null);
+      setSelectedFolderId(currentFolderId);
       onClose();
     } catch (error) {
       console.error('Erro ao enviar documento:', error);
@@ -143,6 +158,47 @@ const UploadDocumentDialog: React.FC<UploadDocumentDialogProps> = ({ isOpen, onC
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 py-4">
+            {/* Seletor de pasta destino */}
+            <div className="grid gap-2">
+              <Label htmlFor="folder-select">
+                Pasta de Destino
+              </Label>
+              <Select
+                value={selectedFolderId || 'root'}
+                onValueChange={(value) => setSelectedFolderId(value === 'root' ? null : value)}
+              >
+                <SelectTrigger id="folder-select">
+                  <SelectValue placeholder="Selecione uma pasta" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="root">
+                    <div className="flex items-center gap-2">
+                      <Folder className="h-4 w-4" />
+                      Raiz
+                    </div>
+                  </SelectItem>
+                  {clientFolders.map(folder => {
+                    const path = getFolderPath(folder.id);
+                    const indentLevel = path.length;
+                    return (
+                      <SelectItem key={folder.id} value={folder.id}>
+                        <div className="flex items-center gap-2" style={{ paddingLeft: `${indentLevel * 12}px` }}>
+                          <Folder className="h-4 w-4 text-yellow-500" />
+                          {folder.name}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                {selectedFolderId 
+                  ? `Enviando para: ${getFolderPath(selectedFolderId).map(f => f.name).join(' > ')}`
+                  : 'O documento será enviado para a raiz'
+                }
+              </p>
+            </div>
+
             <div
               className={`border-2 border-dashed rounded-md p-6 text-center ${
                 isDragging ? 'bg-gray-50 border-blue-500' : 'border-gray-300'

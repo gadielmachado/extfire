@@ -5,4 +5,5 @@ export interface Document {
   size: string;
   uploadDate: Date;
   fileUrl: string;
+  folderId?: string | null;
 }

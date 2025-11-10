@@ -33,6 +33,24 @@ CREATE INDEX IF NOT EXISTS idx_clients_cnpj ON clients(cnpj);
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
 CREATE INDEX IF NOT EXISTS idx_clients_is_blocked ON clients(is_blocked);
 
+-- Tabela de Pastas (Sistema Hierárquico)
+CREATE TABLE IF NOT EXISTS folders (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  parent_folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Constraint para evitar nomes duplicados no mesmo nível
+  CONSTRAINT unique_folder_name_per_level UNIQUE (client_id, parent_folder_id, name)
+);
+
+-- Índices para Folders
+CREATE INDEX IF NOT EXISTS idx_folders_client_id ON folders(client_id);
+CREATE INDEX IF NOT EXISTS idx_folders_parent_folder_id ON folders(parent_folder_id);
+CREATE INDEX IF NOT EXISTS idx_folders_name ON folders(name);
+
 -- Tabela de Documentos
 CREATE TABLE IF NOT EXISTS documents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -41,6 +59,7 @@ CREATE TABLE IF NOT EXISTS documents (
   type VARCHAR(100) NOT NULL,
   size VARCHAR(50) NOT NULL,
   file_url TEXT NOT NULL,
+  folder_id UUID REFERENCES folders(id) ON DELETE SET NULL,
   upload_date TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -49,6 +68,7 @@ CREATE TABLE IF NOT EXISTS documents (
 -- Índices para Documents
 CREATE INDEX IF NOT EXISTS idx_documents_client_id ON documents(client_id);
 CREATE INDEX IF NOT EXISTS idx_documents_upload_date ON documents(upload_date);
+CREATE INDEX IF NOT EXISTS idx_documents_folder_id ON documents(folder_id);
 
 -- Tabela de Perfis de Usuários
 CREATE TABLE IF NOT EXISTS user_profiles (
@@ -99,8 +119,175 @@ CREATE TRIGGER update_user_profiles_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_folders_updated_at ON folders;
+CREATE TRIGGER update_folders_updated_at
+  BEFORE UPDATE ON folders
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
 -- ====================================================
--- PARTE 4: FUNÇÕES AUXILIARES
+-- PARTE 4: FUNÇÕES AUXILIARES (FOLDERS)
+-- ====================================================
+
+-- Função para calcular profundidade de pasta
+CREATE OR REPLACE FUNCTION get_folder_depth(folder_uuid UUID)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  depth INTEGER := 0;
+  current_folder_id UUID := folder_uuid;
+  parent_id UUID;
+  max_iterations INTEGER := 10;
+  iteration_count INTEGER := 0;
+BEGIN
+  IF folder_uuid IS NULL THEN
+    RETURN 0;
+  END IF;
+  
+  LOOP
+    SELECT parent_folder_id INTO parent_id
+    FROM folders
+    WHERE id = current_folder_id;
+    
+    IF NOT FOUND OR parent_id IS NULL THEN
+      EXIT;
+    END IF;
+    
+    depth := depth + 1;
+    current_folder_id := parent_id;
+    
+    iteration_count := iteration_count + 1;
+    IF iteration_count >= max_iterations THEN
+      RAISE EXCEPTION 'Detectado loop infinito na hierarquia de pastas';
+    END IF;
+  END LOOP;
+  
+  RETURN depth;
+END;
+$$;
+
+-- Função para validar profundidade máxima (5 níveis)
+CREATE OR REPLACE FUNCTION validate_folder_depth()
+RETURNS TRIGGER AS $$
+DECLARE
+  current_depth INTEGER;
+  max_depth INTEGER := 4; -- 0-4 = 5 níveis
+BEGIN
+  current_depth := get_folder_depth(NEW.parent_folder_id);
+  
+  IF current_depth >= max_depth THEN
+    RAISE EXCEPTION 'Profundidade máxima de pastas excedida (máximo: 5 níveis)';
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger para validar profundidade
+DROP TRIGGER IF EXISTS check_folder_depth_on_insert ON folders;
+CREATE TRIGGER check_folder_depth_on_insert
+  BEFORE INSERT OR UPDATE ON folders
+  FOR EACH ROW
+  EXECUTE FUNCTION validate_folder_depth();
+
+-- Função para prevenir movimentação recursiva
+CREATE OR REPLACE FUNCTION prevent_folder_recursion()
+RETURNS TRIGGER AS $$
+DECLARE
+  ancestor_id UUID;
+  current_id UUID;
+  max_iterations INTEGER := 10;
+  iteration_count INTEGER := 0;
+BEGIN
+  IF NEW.parent_folder_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  
+  IF NEW.id = NEW.parent_folder_id THEN
+    RAISE EXCEPTION 'Uma pasta não pode ser pai de si mesma';
+  END IF;
+  
+  current_id := NEW.parent_folder_id;
+  
+  LOOP
+    SELECT parent_folder_id INTO ancestor_id
+    FROM folders
+    WHERE id = current_id;
+    
+    IF NOT FOUND OR ancestor_id IS NULL THEN
+      EXIT;
+    END IF;
+    
+    IF ancestor_id = NEW.id THEN
+      RAISE EXCEPTION 'Não é possível mover uma pasta para dentro de si mesma';
+    END IF;
+    
+    current_id := ancestor_id;
+    
+    iteration_count := iteration_count + 1;
+    IF iteration_count >= max_iterations THEN
+      RAISE EXCEPTION 'Detectado loop infinito ao validar hierarquia de pastas';
+    END IF;
+  END LOOP;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger para prevenir recursão
+DROP TRIGGER IF EXISTS prevent_folder_recursion_trigger ON folders;
+CREATE TRIGGER prevent_folder_recursion_trigger
+  BEFORE INSERT OR UPDATE ON folders
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_folder_recursion();
+
+-- Função auxiliar para obter caminho completo da pasta
+CREATE OR REPLACE FUNCTION get_folder_path(folder_uuid UUID)
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  path_parts TEXT[] := ARRAY[]::TEXT[];
+  current_folder_id UUID := folder_uuid;
+  folder_name TEXT;
+  parent_id UUID;
+  max_iterations INTEGER := 10;
+  iteration_count INTEGER := 0;
+BEGIN
+  IF folder_uuid IS NULL THEN
+    RETURN 'Raiz';
+  END IF;
+  
+  LOOP
+    SELECT name, parent_folder_id INTO folder_name, parent_id
+    FROM folders
+    WHERE id = current_folder_id;
+    
+    IF NOT FOUND THEN
+      EXIT;
+    END IF;
+    
+    path_parts := array_prepend(folder_name, path_parts);
+    
+    IF parent_id IS NULL THEN
+      EXIT;
+    END IF;
+    
+    current_folder_id := parent_id;
+    
+    iteration_count := iteration_count + 1;
+    IF iteration_count >= max_iterations THEN
+      RAISE EXCEPTION 'Detectado loop infinito ao construir caminho de pasta';
+    END IF;
+  END LOOP;
+  
+  RETURN 'Raiz > ' || array_to_string(path_parts, ' > ');
+END;
+$$;
+
+-- ====================================================
+-- PARTE 5: FUNÇÕES AUXILIARES (AUTH)
 -- ====================================================
 
 -- Função para verificar se usuário é admin
@@ -486,7 +673,38 @@ CREATE POLICY "user_profiles_delete_policy"
   USING (public.is_admin(auth.uid()));
 
 -- ====================================================
--- PARTE 11: CONFIGURAR BUCKET DE STORAGE
+-- PARTE 11: POLÍTICAS RLS - FOLDERS
+-- ====================================================
+
+-- Habilitar RLS
+ALTER TABLE folders ENABLE ROW LEVEL SECURITY;
+
+-- SELECT: Admins veem todas, clientes veem apenas suas pastas
+CREATE POLICY "folders_select_policy"
+  ON folders FOR SELECT
+  USING (
+    public.is_admin(auth.uid()) OR
+    public.get_user_client_id(auth.uid()) = client_id
+  );
+
+-- INSERT: Apenas admins podem criar pastas
+CREATE POLICY "folders_insert_policy"
+  ON folders FOR INSERT
+  WITH CHECK (public.is_admin(auth.uid()));
+
+-- UPDATE: Apenas admins podem renomear pastas
+CREATE POLICY "folders_update_policy"
+  ON folders FOR UPDATE
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+-- DELETE: Apenas admins podem deletar pastas
+CREATE POLICY "folders_delete_policy"
+  ON folders FOR DELETE
+  USING (public.is_admin(auth.uid()));
+
+-- ====================================================
+-- PARTE 12: CONFIGURAR BUCKET DE STORAGE
 -- ====================================================
 
 -- Criar bucket se não existir
@@ -504,7 +722,7 @@ SET public = false
 WHERE id = 'documents';
 
 -- ====================================================
--- PARTE 12: POLÍTICAS DE STORAGE
+-- PARTE 13: POLÍTICAS DE STORAGE
 -- ====================================================
 
 -- INSERT: Admins podem fazer upload para qualquer pasta, clientes podem fazer upload na sua pasta
@@ -548,7 +766,7 @@ USING (
 );
 
 -- ====================================================
--- PARTE 13: POPULAR USER_PROFILES COM USUÁRIOS EXISTENTES
+-- PARTE 14: POPULAR USER_PROFILES COM USUÁRIOS EXISTENTES
 -- ====================================================
 
 -- Inserir perfis para usuários que ainda não têm
@@ -575,7 +793,7 @@ WHERE NOT EXISTS (
 ON CONFLICT (id) DO NOTHING;
 
 -- ====================================================
--- PARTE 14: VERIFICAÇÃO FINAL
+-- PARTE 15: VERIFICAÇÃO FINAL
 -- ====================================================
 
 DO $$
@@ -586,10 +804,11 @@ BEGIN
   RAISE NOTICE '╚════════════════════════════════════════════════════════╝';
   RAISE NOTICE '';
   RAISE NOTICE '📋 COMPONENTES CRIADOS/ATUALIZADOS:';
-  RAISE NOTICE '  ✓ Tabelas: clients, documents, user_profiles';
+  RAISE NOTICE '  ✓ Tabelas: clients, documents, user_profiles, folders';
   RAISE NOTICE '  ✓ Funções auxiliares (is_admin, get_user_client_id, sync_user_profile)';
+  RAISE NOTICE '  ✓ Funções de pastas (get_folder_depth, get_folder_path, validações)';
   RAISE NOTICE '  ✓ Triggers de sincronização automática';
-  RAISE NOTICE '  ✓ Políticas RLS para todas as tabelas';
+  RAISE NOTICE '  ✓ Políticas RLS para todas as tabelas (incluindo folders)';
   RAISE NOTICE '  ✓ Bucket de Storage e políticas';
   RAISE NOTICE '  ✓ User_profiles sincronizados';
   RAISE NOTICE '';
@@ -597,6 +816,8 @@ BEGIN
   RAISE NOTICE '  ✓ Admins: Acesso completo a tudo';
   RAISE NOTICE '  ✓ Clientes: Acesso apenas aos seus próprios dados';
   RAISE NOTICE '  ✓ Clientes podem fazer upload de documentos';
+  RAISE NOTICE '  ✓ Apenas admins podem criar/editar/deletar pastas';
+  RAISE NOTICE '  ✓ Sistema hierárquico com máximo de 5 níveis';
   RAISE NOTICE '';
   RAISE NOTICE '🎯 PRÓXIMOS PASSOS:';
   RAISE NOTICE '  1. Recarregue a aplicação';
@@ -613,7 +834,7 @@ SELECT
   (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as colunas
 FROM information_schema.tables t
 WHERE table_schema = 'public'
-  AND table_name IN ('clients', 'documents', 'user_profiles')
+  AND table_name IN ('clients', 'documents', 'user_profiles', 'folders')
 ORDER BY table_name;
 
 -- Verificar funções
@@ -628,7 +849,11 @@ WHERE routine_schema = 'public'
     'sync_user_profile',
     'handle_new_user',
     'handle_user_metadata_update',
-    'sync_client_user_profile'
+    'sync_client_user_profile',
+    'get_folder_depth',
+    'get_folder_path',
+    'validate_folder_depth',
+    'prevent_folder_recursion'
   )
 ORDER BY routine_name;
 
@@ -639,7 +864,7 @@ SELECT
   COUNT(*) as quantidade
 FROM pg_policies
 WHERE schemaname = 'public'
-  AND tablename IN ('clients', 'documents', 'user_profiles')
+  AND tablename IN ('clients', 'documents', 'user_profiles', 'folders')
 GROUP BY tablename
 ORDER BY tablename;
 
