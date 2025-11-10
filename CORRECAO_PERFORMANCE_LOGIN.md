@@ -182,7 +182,7 @@ if (session?.user) {
 #### ✅ Login de Admin
 ```
 Email: gadyel.bm@gmail.com
-Senha: 200105@Ga
+Senha: Extfire@197645
 ```
 **Esperado:** Login rápido, carregamento de todos os clientes
 

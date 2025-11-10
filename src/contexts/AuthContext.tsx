@@ -15,11 +15,12 @@ const ADMIN_EMAILS = [
 ];
 
 // Senha padrão para administradores
-const ADMIN_PASSWORD = '200105@Ga';
+const ADMIN_PASSWORD = 'Extfire@197645';
 
 // Lista de emails de administradores com necessidade de recriação (fix para emails que perderam acesso)
 const ADMIN_RECREATE = [
   'gadyel.bm@gmail.com',
+  'extfire.extfire@gmail.com',
   'paoliellocristiano@gmail.com'
 ];
 

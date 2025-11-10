@@ -182,7 +182,7 @@ export async function signUpOrUpdateUser(
         console.log(`Criando usuário admin ${email}...`);
         const { error: signUpError } = await supabase.auth.signUp({
           email,
-          password: password || '200105@Ga', // Usar senha fornecida ou padrão
+          password: password || 'Extfire@197645', // Usar senha fornecida ou padrão
           options: {
             data: {
               name: clientData.name || 'Cristiano (Admin)',

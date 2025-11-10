@@ -229,7 +229,7 @@ Senha: admin123
 ### 4. Teste Login com Email Completo
 ```
 Email: gadyel.bm@gmail.com
-Senha: 200105@Ga
+Senha: Extfire@197645
 ✅ Esperado: Entrar no dashboard imediatamente
 ```
 
