@@ -259,7 +259,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   };
 
   return (
-    <div className="flex-1 p-8 bg-gray-50">
+    <div className="flex-1 p-8 bg-gray-50 overflow-auto">
       <div className="flex justify-between items-start mb-8">
         <div>
           <h1 className="text-2xl font-bold">{client.name}</h1>
