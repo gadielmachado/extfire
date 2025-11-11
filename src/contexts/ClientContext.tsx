@@ -187,35 +187,6 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } else {
         console.log("Clientes sincronizados com sucesso com o Supabase");
         
-        // Também atualizar contas de autenticação para cada cliente com email
-        const clientsWithEmail = clientsToSync.filter(client => client.email && client.email.trim() !== '');
-        
-        if (clientsWithEmail.length > 0) {
-          console.log(`Atualizando credenciais de autenticação para ${clientsWithEmail.length} clientes...`);
-          
-          // Importar dinamicamente para evitar dependência circular
-          const { signUpOrUpdateUser } = await import('@/lib/clientService');
-          
-          // Processar cada cliente sequencialmente
-          for (const client of clientsWithEmail) {
-            try {
-              await signUpOrUpdateUser(
-                client.email as string, 
-                client.password || '123456', 
-                {
-                  name: client.name,
-                  cnpj: client.cnpj,
-                  clientId: client.id
-                }
-              );
-            } catch (authError) {
-              console.error(`Erro ao atualizar autenticação para cliente ${client.name}:`, authError);
-            }
-          }
-          
-          console.log(`Finalizada atualização de credenciais para ${clientsWithEmail.length} clientes.`);
-        }
-        
         return true;
       }
     } catch (error) {
@@ -815,6 +786,8 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     
+    const originalClient = clients.find(c => c.id === updatedClient.id);
+
     // CRÍTICO: Sincronizar com Supabase PRIMEIRO antes de atualizar estado local
     try {
       const syncSuccess = await syncClientWithSupabase(updatedClient);
@@ -824,6 +797,38 @@ export const ClientProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return; // Não atualiza se não conseguir sincronizar
       }
       
+      // Se o email ou senha mudou, atualizar as credenciais de autenticação
+      if (
+        updatedClient.email &&
+        updatedClient.email.trim() !== '' &&
+        (originalClient?.email !== updatedClient.email || originalClient?.password !== updatedClient.password)
+      ) {
+        try {
+          console.log(`Atualizando credenciais para o cliente ${updatedClient.name} (${updatedClient.email})`);
+          const { signUpOrUpdateUser } = await import('@/lib/clientService');
+          const result = await signUpOrUpdateUser(
+            updatedClient.email,
+            updatedClient.password || '123456',
+            {
+              name: updatedClient.name,
+              cnpj: updatedClient.cnpj,
+              clientId: updatedClient.id
+            }
+          );
+          if (result.success) {
+            console.log(`Credenciais para o cliente ${updatedClient.name} atualizadas com sucesso!`);
+          } else {
+            console.error(`Erro ao atualizar credenciais para o cliente ${updatedClient.name}`);
+            if (result.error) {
+              toast.error(`Erro ao atualizar usuário: ${result.error.message}`);
+            }
+          }
+        } catch (authError) {
+          console.error(`Erro ao gerenciar autenticação para o cliente ${updatedClient.name}:`, authError);
+          toast.error(`Erro inesperado ao atualizar usuário. Tente novamente.`);
+        }
+      }
+
       // Se o cliente tiver email, atualizar user_profile também
       if (updatedClient.email && updatedClient.email.trim() !== '') {
         try {

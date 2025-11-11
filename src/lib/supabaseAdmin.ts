@@ -9,6 +9,9 @@ import type { Database } from '@/integrations/supabase/types';
 const SUPABASE_URL = "https://dwhbznsijdsiwccamfvd.supabase.co";
 // ATENÇÃO: Em um ambiente real, isso deveria estar em variáveis de ambiente no servidor
 // e nunca exposto no frontend
+// SECURITY WARNING: Exposing the service_role_key in client-side code is a major security risk.
+// This allows any user to gain full admin access to your Supabase project.
+// These functions should be moved to a secure backend environment (e.g., Supabase Edge Functions) immediately.
 const SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3aGJ6bnNpamRzaXdjY2FtZnZkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDA3NTIxMSwiZXhwIjoyMDc1NjUxMjExfQ.qkRD5E4-uQPBI3YIqWQjIHMgee-sG_Ed7bArFdDk6HE";
 
 // Cliente Supabase com privilégios administrativos
